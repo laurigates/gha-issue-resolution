@@ -1,0 +1,18 @@
+[project]
+name = "gha-issue-resolution"
+version = "0.1.0"
+description = "Default template for PDM package"
+authors = [
+    {name = "Lauri Gates", email = "lauri.gates@forumvirium.fi"},
+]
+dependencies = [
+    "PyGithub==1.55",
+    "requests==2.26.0",
+]
+requires-python = "==3.12.*"
+readme = "README.md"
+license = {text = "MIT"}
+
+
+[tool.pdm]
+distribution = false
