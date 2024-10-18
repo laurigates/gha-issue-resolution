@@ -2,7 +2,7 @@ name: Issue Resolution
 
 on:
   issues:
-    types: [opened, reopened]
+    types: [opened, reopened, commented]
   schedule:
     - cron: '0 0 * * *'  # Run daily at midnight
   workflow_dispatch:  # Allow manual triggering
@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      pull-requests: write
+      contents: write
     steps:
     - uses: actions/checkout@v3
     - name: Issue Resolution with Gemini
