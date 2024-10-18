@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from github import Github
 from pathlib import Path
@@ -40,78 +41,104 @@ def query_gemini(prompt):
     )
     return response.json()['candidates'][0]['content']['parts'][0]['text']
 
+def create_pull_request(issue, solution):
+    # Create a new branch
+    base_branch = repo.default_branch
+    new_branch = f"fix-issue-{issue.number}"
+    sb = repo.get_branch(base_branch)
+    repo.create_git_ref(ref=f"refs/heads/{new_branch}", sha=sb.commit.sha)
+
+    # Parse the solution to extract file changes
+    changes = parse_solution_for_changes(solution)
+
+    # Commit changes
+    for file_path, new_content in changes.items():
+        try:
+            file = repo.get_contents(file_path, ref=new_branch)
+            repo.update_file(file_path, f"Fix for issue #{issue.number}", new_content, file.sha, branch=new_branch)
+        except Exception as e:
+            print(f"Error updating file {file_path}: {str(e)}")
+
+    # Create pull request
+    pr = repo.create_pull(
+        title=f"Fix for issue #{issue.number}",
+        body=f"This pull request addresses issue #{issue.number}.\n\nProposed solution:\n\n{solution}",
+        head=new_branch,
+        base=base_branch
+    )
+    
+    return pr.html_url
+
+def parse_solution_for_changes(solution):
+    changes = {}
+    current_file = None
+    current_content = []
+
+    for line in solution.split('\n'):
+        if line.startswith('File: '):
+            if current_file:
+                changes[current_file] = '\n'.join(current_content)
+            current_file = line.split(': ')[1].strip()
+            current_content = []
+        elif current_file:
+            current_content.append(line)
+
+    if current_file:
+        changes[current_file] = '\n'.join(current_content)
+
+    return changes
+
 def process_issue(issue):
-    # Check if we've already commented on this issue
-    for comment in issue.get_comments():
-        if "AI-generated suggestion" in comment.body:
-            print(f"Already commented on issue #{issue.number}. Skipping.")
-            return
+    # Check if the issue has at least one comment
+    comments = list(issue.get_comments())
+    if len(comments) == 0:
+        print(f"Issue #{issue.number} has no comments. Skipping.")
+        return
 
     repo_structure = get_repo_structure()
     initial_prompt = f"""
-    Given the following GitHub issue and repository structure, suggest a solution:
+    Given the following GitHub issue, comments, and repository structure, suggest a solution:
 
     Issue Title: {issue.title}
     Issue Body: {issue.body}
+
+    Comments:
+    {' '.join([comment.body for comment in comments])}
 
     Repository Structure:
     {repo_structure}
 
     Please provide the following:
-    1. A brief analysis of the issue.
-    2. A list of files that are likely relevant to this issue. Don't limit yourself to a specific number, but be judicious and only include files that are directly relevant.
-    3. An initial suggestion for how to approach solving this issue.
+    1. A brief analysis of the issue and comments.
+    2. A list of files that need to be modified to resolve this issue.
+    3. A detailed solution, including specific code changes for each file.
 
-    Format your response in Markdown for better readability.
+    Format your response in Markdown, and use the following format for file changes:
+    
+    File: [filename]
+    [entire new content of the file]
+
+    Repeat this for each file that needs changes.
     """
     
-    initial_response = query_gemini(initial_prompt)
+    solution = query_gemini(initial_prompt)
     
-    # Extract file paths from the initial response
-    file_paths = [line.split()[-1] for line in initial_response.split('\n') if line.startswith('-') and '.' in line]
-    
-    # Get content of identified files
-    file_contents = ""
-    for file_path in file_paths:
-        if Path(file_path).is_file():
-            file_contents += f"\nContent of {file_path}:\n```\n{get_file_content(file_path)}\n```\n"
-
-    # Second prompt with file contents
-    detailed_prompt = f"""
-    Based on the initial analysis and the content of the relevant files, provide a more detailed solution:
-
-    Issue Title: {issue.title}
-    Issue Body: {issue.body}
-
-    Initial Analysis and Suggestion:
-    {initial_response}
-
-    Relevant File Contents:
-    {file_contents}
-
-    Please provide:
-    1. A detailed solution to the issue, including specific code changes if applicable.
-    2. An explanation of why these changes would resolve the issue.
-    3. Any potential side effects or considerations to keep in mind when implementing this solution.
-
-    Format your response in Markdown for better readability.
-    """
-
-    detailed_solution = query_gemini(detailed_prompt)
+    # Create a pull request with the proposed changes
+    pr_url = create_pull_request(issue, solution)
     
     comment_body = f"""
-    ## AI-generated suggestion
+    ## AI-generated pull request
 
-    Here's a potential solution to this issue, generated by an AI assistant:
+    Based on the issue description and comments, an AI assistant has generated a potential solution and created a pull request.
 
-    {detailed_solution}
+    You can view the proposed changes here: {pr_url}
 
-    Please review this suggestion and let me know if you need any clarification or have any questions.
-    This is an AI-generated response and may require human validation and testing before implementation.
+    Please review the changes carefully and provide feedback or merge if appropriate.
+    This is an AI-generated solution and may require human validation and testing before implementation.
     """
     
     issue.create_comment(comment_body)
-    print(f"Commented on issue #{issue.number}")
+    print(f"Created pull request for issue #{issue.number}")
 
 def main():
     # Check if we're running in response to an issue event
