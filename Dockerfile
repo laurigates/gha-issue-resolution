@@ -22,4 +22,4 @@ uv pip install -r pyproject.toml
 
 COPY src/ ./
 
-CMD ["python", "/app/src/gha_issue_resolution"]
+CMD ["python", "/app/gha_issue_resolution"]
