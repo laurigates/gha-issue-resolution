@@ -1,5 +1,5 @@
 name: 'Issue Resolution with Gemini'
-description: 'Analyzes GitHub issues and provides AI-generated suggestions using Gemini'
+description: 'Analyzes GitHub issues and provides AI-generated suggestions using Gemini, creating pull requests when appropriate'
 inputs:
   github_token:
     description: 'GitHub token'
@@ -10,6 +10,10 @@ inputs:
 runs:
   using: 'docker'
   image: 'docker://ghcr.io/laurigates/gha-issue-resolution:main'
-  env:
-    GITHUB_TOKEN: ${{ inputs.github_token }}
-    GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
+env:
+  GITHUB_TOKEN: ${{ inputs.github_token }}
+  GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
+permissions:
+  issues: write
+  pull-requests: write
+  contents: write
