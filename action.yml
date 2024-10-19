@@ -1,5 +1,5 @@
-name: 'Issue Resolution with Gemini'
-description: 'Analyzes GitHub issues and provides AI-generated suggestions using Gemini'
+name: 'Issue Resolution with Gemini Flash'
+description: 'Analyzes GitHub issues and provides AI-generated suggestions using Gemini Flash'
 inputs:
   github_token:
     description: 'GitHub token'
@@ -7,9 +7,14 @@ inputs:
   gemini_api_key:
     description: 'Gemini API Key'
     required: true
+  max_tokens:
+    description: 'Maximum number of tokens for Gemini Flash response'
+    required: false
+    default: '8192'
 runs:
   using: 'docker'
   image: 'docker://ghcr.io/laurigates/gha-issue-resolution:main'
   env:
     GITHUB_TOKEN: ${{ inputs.github_token }}
     GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
+    MAX_TOKENS: ${{ inputs.max_tokens }}

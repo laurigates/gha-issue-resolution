@@ -2,9 +2,11 @@
 
 import os
 import json
-import requests
 from github import Github
 from pathlib import Path
+import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from google.generativeai.types import GenerationConfig
 
 # Setup GitHub client
 g = Github(os.environ['GITHUB_TOKEN'])
@@ -12,7 +14,30 @@ repo = g.get_repo(os.environ['GITHUB_REPOSITORY'])
 
 # Setup Gemini API
 GEMINI_API_KEY = os.environ['GEMINI_API_KEY']
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+genai.configure(api_key=GEMINI_API_KEY)
+
+# Set a large default max token limit
+MAX_TOKENS = int(os.environ.get('MAX_TOKENS', '8192'))
+
+# Specify the Gemini Flash model
+MODEL_ID = 'gemini-1.5-flash-002'
+
+# Set model parameters
+generation_config = GenerationConfig(
+    temperature=0.7,
+    top_p=1.0,
+    top_k=32,
+    candidate_count=1,
+    max_output_tokens=MAX_TOKENS,
+)
+
+# Set safety settings
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+}
 
 def get_repo_structure():
     structure = ""
@@ -21,27 +46,36 @@ def get_repo_structure():
             structure += f"- {file}\n"
     return structure
 
-def get_file_content(file_path, max_lines=50):
+def get_file_content(file_path, max_chars=100000):
     try:
         with open(file_path, 'r') as file:
-            lines = file.readlines()
-            return ''.join(lines[:max_lines])
+            content = file.read(max_chars)
+            if len(content) == max_chars:
+                content += "\n... (file truncated due to size)"
+            return content
     except Exception as e:
         return f"Error reading file: {str(e)}"
 
 def query_gemini(prompt):
-    headers = {
-        "Content-Type": "application/json",
-    }
-    data = {
-        "contents": [{"parts":[{"text": prompt}]}],
-    }
-    response = requests.post(
-        f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
-        headers=headers,
-        json=data
+    model = genai.GenerativeModel(
+        MODEL_ID,
+        generation_config=generation_config,
+        safety_settings=safety_settings,
     )
-    return response.json()['candidates'][0]['content']['parts'][0]['text']
+    response = model.generate_content([
+        genai.types.ContentDict({
+            'role': 'user',
+            'parts': [
+                "You are an AI assistant specialized in analyzing GitHub issues and suggesting solutions. "
+                "Your task is to provide detailed, actionable advice for resolving the given issue.",
+                prompt
+            ]
+        })
+    ])
+    print(f"\nUsage metadata:\n{response.prompt_feedback}")
+    print(f"\nFinish reason:\n{response.candidates[0].finish_reason}")
+    print(f"\nSafety ratings:\n{response.candidates[0].safety_ratings}")
+    return response.text
 
 def process_issue(issue):
     # Check if we've already commented on this issue
@@ -52,20 +86,18 @@ def process_issue(issue):
 
     repo_structure = get_repo_structure()
     initial_prompt = f"""
-    Given the following GitHub issue and repository structure, suggest a solution:
-
+    Analyze this GitHub issue and suggest a solution based on the repository structure:
+    
     Issue Title: {issue.title}
     Issue Body: {issue.body}
-
+    
     Repository Structure:
     {repo_structure}
-
-    Please provide the following:
+    
+    Provide:
     1. A brief analysis of the issue.
-    2. A list of files that are likely relevant to this issue. Don't limit yourself to a specific number, but be judicious and only include files that are directly relevant.
-    3. An initial suggestion for how to approach solving this issue.
-
-    Format your response in Markdown for better readability.
+    2. A list of files that are likely relevant to this issue (up to 5 files).
+    3. An initial approach for solving this issue.
     """
     
     initial_response = query_gemini(initial_prompt)
@@ -75,13 +107,13 @@ def process_issue(issue):
     
     # Get content of identified files
     file_contents = ""
-    for file_path in file_paths:
+    for file_path in file_paths[:5]:  # Limit to 5 files
         if Path(file_path).is_file():
             file_contents += f"\nContent of {file_path}:\n```\n{get_file_content(file_path)}\n```\n"
 
     # Second prompt with file contents
     detailed_prompt = f"""
-    Based on the initial analysis and the content of the relevant files, provide a more detailed solution:
+    Based on the initial analysis and the content of the relevant files, provide a detailed solution:
 
     Issue Title: {issue.title}
     Issue Body: {issue.body}
@@ -96,8 +128,6 @@ def process_issue(issue):
     1. A detailed solution to the issue, including specific code changes if applicable.
     2. An explanation of why these changes would resolve the issue.
     3. Any potential side effects or considerations to keep in mind when implementing this solution.
-
-    Format your response in Markdown for better readability.
     """
 
     detailed_solution = query_gemini(detailed_prompt)
@@ -117,7 +147,7 @@ def process_issue(issue):
     print(f"Commented on issue #{issue.number}")
 
 def main():
-    print("Starting Issue Resolution with Gemini")
+    print(f"Starting Issue Resolution with Gemini Flash (Model: {MODEL_ID})")
     
     # Check if we're running in response to an issue event
     if 'GITHUB_EVENT_NAME' in os.environ and os.environ['GITHUB_EVENT_NAME'] == 'issues':
@@ -140,7 +170,7 @@ def main():
         for issue in open_issues:
             process_issue(issue)
 
-    print("Finished Issue Resolution with Gemini")
+    print("Finished Issue Resolution with Gemini Flash")
 
 if __name__ == "__main__":
     main()
