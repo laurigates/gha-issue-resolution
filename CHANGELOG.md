@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/laurigates/gha-issue-resolution/compare/v1.0.0...v1.0.1) (2024-10-19)
+
+
+### Bug Fixes
+
+* remove -m from gh action command ([fcbb0ef](https://github.com/laurigates/gha-issue-resolution/commit/fcbb0efea9168f1e4e64fcd2abe3cdec60962699))
+
 ## 1.0.0 (2024-10-19)
 
 
