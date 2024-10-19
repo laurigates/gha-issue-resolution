@@ -5,21 +5,27 @@ ARG ALPINE_VERSION="3.19"
 
 FROM python:${PYTHON_VERSION}-alpine${ALPINE_VERSION} as build
 
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
 
 WORKDIR /app
 
-# Copy and install requirements only first to cache the dependency layer
+# Install build dependencies
+RUN apk add --no-cache gcc musl-dev
+
+# Install uv
 RUN pip install uv
 
+# Copy and install requirements
 COPY pyproject.toml ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-uv venv $VIRTUAL_ENV && \
-uv pip install -r pyproject.toml
+    uv venv $VIRTUAL_ENV && \
+    uv pip install -r pyproject.toml
 
-COPY src/ ./
+# Copy source code
+COPY src/ ./src/
 
-CMD ["python", "/app/gha_issue_resolution/process_issues.py"]
+# Set the entrypoint
+ENTRYPOINT ["python", "-m", "gha_issue_resolution"]

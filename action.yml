@@ -1,5 +1,5 @@
 name: 'Issue Resolution with Gemini'
-description: 'Analyzes GitHub issues and provides AI-generated suggestions using Gemini, creating pull requests when appropriate'
+description: 'Analyzes GitHub issues and provides AI-generated suggestions using Gemini'
 inputs:
   github_token:
     description: 'GitHub token'
