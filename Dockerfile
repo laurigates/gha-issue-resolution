@@ -24,4 +24,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Copy source code
 COPY src .
 
-CMD ["python", "-m", "gha_issue_resolution"]
+CMD ["python", "gha_issue_resolution"]
