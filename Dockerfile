@@ -12,9 +12,6 @@ ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apk add --no-cache gcc musl-dev
-
 # Install uv
 RUN pip install uv
 
@@ -25,7 +22,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install -r pyproject.toml
 
 # Copy source code
-COPY src/ ./src/
+COPY src .
 
-# Set the entrypoint
-ENTRYPOINT ["python", "-m", "gha_issue_resolution"]
+CMD ["python", "-m", "gha_issue_resolution"]
