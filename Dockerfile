@@ -1,27 +1,25 @@
-# syntax=docker/dockerfile:1
+ARG PYTHON_BASE=3.12-slim
+# build stage
+FROM python:$PYTHON_BASE AS builder
 
-ARG PYTHON_VERSION="3.12"
-ARG ALPINE_VERSION="3.19"
+# install PDM
+RUN pip install -U pdm
+# disable update check
+ENV PDM_CHECK_UPDATE=false
+# copy files
+COPY pyproject.toml pdm.lock README.md /project/
+COPY src/ /project/src
 
-FROM python:${PYTHON_VERSION}-alpine${ALPINE_VERSION} as build
+# install dependencies and project into the local packages directory
+WORKDIR /project
+RUN pdm install --check --prod --no-editable
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
+# run stage
+FROM python:$PYTHON_BASE
 
-WORKDIR /app
-
-# Install uv
-RUN pip install uv
-
-# Copy and install requirements
-COPY pyproject.toml ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv venv $VIRTUAL_ENV && \
-    uv pip install -r pyproject.toml
-
-# Copy source code
-COPY src .
-
-CMD ["python", "gha_issue_resolution"]
+# retrieve packages from build stage
+COPY --from=builder /project/.venv/ /project/.venv
+ENV PATH="/project/.venv/bin:$PATH"
+# set command/entrypoint, adapt to fit your needs
+COPY src /project/src
+CMD ["python", "src/gha_issue_resolution/__main__.py"]
