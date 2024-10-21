@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2](https://github.com/laurigates/gha-issue-resolution/compare/v1.0.1...v1.0.2) (2024-10-21)
+
+
+### Bug Fixes
+
+* container image build ([b470154](https://github.com/laurigates/gha-issue-resolution/commit/b470154e11a7acbe85ad170a6302afe58d43c5df))
+* **deps:** add missing grpcio ([f03e597](https://github.com/laurigates/gha-issue-resolution/commit/f03e5979f1a9b060f93f28e15fd5a6b02119c789))
+
 ## [1.0.1](https://github.com/laurigates/gha-issue-resolution/compare/v1.0.0...v1.0.1) (2024-10-19)
 
 
