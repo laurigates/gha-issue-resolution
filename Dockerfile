@@ -8,7 +8,6 @@ RUN pip install -U pdm
 ENV PDM_CHECK_UPDATE=false
 # copy files
 COPY pyproject.toml pdm.lock README.md /project/
-COPY src/ /project/src
 
 # install dependencies and project into the local packages directory
 WORKDIR /project
@@ -17,9 +16,10 @@ RUN pdm install --check --prod --no-editable
 # run stage
 FROM python:$PYTHON_BASE
 
+WORKDIR /project
 # retrieve packages from build stage
 COPY --from=builder /project/.venv/ /project/.venv
 ENV PATH="/project/.venv/bin:$PATH"
 # set command/entrypoint, adapt to fit your needs
 COPY src /project/src
-CMD ["python", "src/gha_issue_resolution/__main__.py"]
+CMD ["python", "src/gha_issue_resolution"]
