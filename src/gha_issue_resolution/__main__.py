@@ -7,6 +7,7 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from google.generativeai.types import GenerationConfig
 import base64
 import re
+from datetime import datetime, timedelta
 
 def setup_github():
     """Setup GitHub client and get repository"""
@@ -106,9 +107,17 @@ def parse_code_blocks(solution_text):
 def create_branch(repo, base_branch='main'):
     """Create a new branch for the changes"""
     try:
-        base_ref = repo.get_git_ref(f"heads/{base_branch}")
-        branch_name = f"ai-suggestion-{os.urandom(4).hex()}"
+        # Try 'main' first, then 'master' if 'main' fails
+        try:
+            base_ref = repo.get_git_ref(f"heads/{base_branch}")
+        except:
+            base_branch = 'master'
+            base_ref = repo.get_git_ref(f"heads/{base_branch}")
+            
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        branch_name = f"ai-suggestion-{timestamp}-{os.urandom(2).hex()}"
         repo.create_git_ref(f"refs/heads/{branch_name}", base_ref.object.sha)
+        print(f"Created branch: {branch_name} from {base_branch}")
         return branch_name
     except Exception as e:
         print(f"Error creating branch: {e}")
@@ -117,6 +126,7 @@ def create_branch(repo, base_branch='main'):
 def update_file(repo, file_path, content, branch, commit_message):
     """Update or create a file in the repository"""
     try:
+        print(f"Attempting to update file: {file_path} on branch: {branch}")
         # Try to get existing file
         try:
             file = repo.get_contents(file_path, ref=branch)
@@ -127,7 +137,9 @@ def update_file(repo, file_path, content, branch, commit_message):
                 file.sha,
                 branch=branch
             )
-        except Exception:
+            print(f"Updated existing file: {file_path}")
+        except Exception as e:
+            print(f"File {file_path} doesn't exist, creating new file. Error was: {str(e)}")
             # File doesn't exist, create it
             repo.create_file(
                 file_path,
@@ -135,6 +147,7 @@ def update_file(repo, file_path, content, branch, commit_message):
                 content,
                 branch=branch
             )
+            print(f"Created new file: {file_path}")
     except Exception as e:
         print(f"Error updating file {file_path}: {e}")
         raise
@@ -142,11 +155,13 @@ def update_file(repo, file_path, content, branch, commit_message):
 def create_pull_request(repo, issue, solution_text, code_changes):
     """Create a pull request with the suggested changes"""
     try:
+        print("Creating pull request...")
         # Create a new branch
         branch_name = create_branch(repo)
         
         # Apply each code change
         for file_path, new_content in code_changes:
+            print(f"Processing changes for file: {file_path}")
             update_file(
                 repo,
                 file_path,
@@ -164,24 +179,38 @@ def create_pull_request(repo, issue, solution_text, code_changes):
 
 This is an AI-generated pull request. Please review the changes carefully before merging.
             """,
-            base="main",
+            base=repo.default_branch,
             head=branch_name
         )
         
+        print(f"Created pull request: {pr.html_url}")
+        
         # Link PR to issue
-        issue.create_comment(f"I've created a pull request with suggested changes: {pr.html_url}")
+        comment = issue.create_comment(f"I've created a pull request with suggested changes: {pr.html_url}")
+        print(f"Added comment to issue: {comment.html_url}")
         
         return pr
     except Exception as e:
         print(f"Error creating pull request: {e}")
         raise
 
-def process_issue(issue):
-    # Check if we've already commented on this issue
+def check_recent_bot_activity(issue, hours=24):
+    """Check if the bot has commented on this issue recently"""
+    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    
     for comment in issue.get_comments():
         if "AI-generated suggestion" in comment.body:
-            print(f"Already commented on issue #{issue.number}. Skipping.")
-            return
+            if comment.created_at > cutoff_time:
+                return True
+    return False
+
+def process_issue(issue):
+    print(f"Processing issue #{issue.number}: {issue.title}")
+    
+    # Check if we've already processed this issue recently
+    if check_recent_bot_activity(issue):
+        print(f"Recently processed issue #{issue.number}. Skipping.")
+        return
 
     repo_structure = get_repo_structure()
     initial_prompt = f"""
@@ -199,16 +228,20 @@ def process_issue(issue):
     3. An initial approach for solving this issue.
     """
     
+    print("Generating initial analysis...")
     initial_response = query_gemini(initial_prompt)
     
     # Extract file paths from the initial response
     file_paths = [line.split()[-1] for line in initial_response.split('\n') if line.startswith('-') and '.' in line]
+    print(f"Identified relevant files: {file_paths}")
     
     # Get content of identified files
     file_contents = ""
     for file_path in file_paths[:5]:  # Limit to 5 files
         if Path(file_path).is_file():
-            file_contents += f"\nContent of {file_path}:\n```\n{get_file_content(file_path)}\n```\n"
+            content = get_file_content(file_path)
+            file_contents += f"\nContent of {file_path}:\n```\n{content}\n```\n"
+            print(f"Added content of {file_path}")
 
     # Second prompt with file contents and request for specific code changes
     detailed_prompt = f"""
@@ -236,10 +269,12 @@ def process_issue(issue):
     Make sure to include the complete file content for any files that need changes, not just the changed portions.
     """
 
+    print("Generating detailed solution...")
     detailed_solution = query_gemini(detailed_prompt)
     
     # Extract code changes from the solution
     code_changes = parse_code_blocks(detailed_solution)
+    print(f"Found {len(code_changes)} code changes to implement")
     
     comment_body = f"""
     ## AI-generated suggestion
@@ -248,12 +283,12 @@ def process_issue(issue):
 
     {detailed_solution}
 
-    I'll create a pull request with these suggested changes.
+    {'' if not code_changes else "I'll create a pull request with these suggested changes."}
     This is an AI-generated response and requires human validation and testing before implementation.
     """
     
-    issue.create_comment(comment_body)
-    print(f"Commented on issue #{issue.number}")
+    comment = issue.create_comment(comment_body)
+    print(f"Added comment to issue: {comment.html_url}")
     
     if code_changes:
         pr = create_pull_request(repo, issue, detailed_solution, code_changes)
