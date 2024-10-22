@@ -5,6 +5,8 @@ import google.generativeai as genai
 from github import Github
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from google.generativeai.types import GenerationConfig
+import base64
+import re
 
 def setup_github():
     """Setup GitHub client and get repository"""
@@ -87,6 +89,93 @@ def query_gemini(prompt):
     print(f"\nSafety ratings:\n{response.candidates[0].safety_ratings}")
     return response.text
 
+def parse_code_blocks(solution_text):
+    """Extract code blocks and their file paths from the solution text"""
+    # Pattern to match markdown code blocks with optional file paths
+    pattern = r'```(?:[\w-]+)?\s*(?:File:\s*([\w/.,-]+))?\n(.*?)```'
+    matches = re.finditer(pattern, solution_text, re.DOTALL)
+    
+    code_changes = []
+    for match in matches:
+        file_path = match.group(1)
+        code = match.group(2).strip()
+        if file_path:
+            code_changes.append((file_path, code))
+    return code_changes
+
+def create_branch(repo, base_branch='main'):
+    """Create a new branch for the changes"""
+    try:
+        base_ref = repo.get_git_ref(f"heads/{base_branch}")
+        branch_name = f"ai-suggestion-{os.urandom(4).hex()}"
+        repo.create_git_ref(f"refs/heads/{branch_name}", base_ref.object.sha)
+        return branch_name
+    except Exception as e:
+        print(f"Error creating branch: {e}")
+        raise
+
+def update_file(repo, file_path, content, branch, commit_message):
+    """Update or create a file in the repository"""
+    try:
+        # Try to get existing file
+        try:
+            file = repo.get_contents(file_path, ref=branch)
+            repo.update_file(
+                file_path,
+                commit_message,
+                content,
+                file.sha,
+                branch=branch
+            )
+        except Exception:
+            # File doesn't exist, create it
+            repo.create_file(
+                file_path,
+                commit_message,
+                content,
+                branch=branch
+            )
+    except Exception as e:
+        print(f"Error updating file {file_path}: {e}")
+        raise
+
+def create_pull_request(repo, issue, solution_text, code_changes):
+    """Create a pull request with the suggested changes"""
+    try:
+        # Create a new branch
+        branch_name = create_branch(repo)
+        
+        # Apply each code change
+        for file_path, new_content in code_changes:
+            update_file(
+                repo,
+                file_path,
+                new_content,
+                branch_name,
+                f"AI suggestion: Update {file_path}"
+            )
+        
+        # Create pull request
+        pr = repo.create_pull(
+            title=f"AI suggestion for issue #{issue.number}",
+            body=f"""This pull request addresses issue #{issue.number}
+
+{solution_text}
+
+This is an AI-generated pull request. Please review the changes carefully before merging.
+            """,
+            base="main",
+            head=branch_name
+        )
+        
+        # Link PR to issue
+        issue.create_comment(f"I've created a pull request with suggested changes: {pr.html_url}")
+        
+        return pr
+    except Exception as e:
+        print(f"Error creating pull request: {e}")
+        raise
+
 def process_issue(issue):
     # Check if we've already commented on this issue
     for comment in issue.get_comments():
@@ -121,7 +210,7 @@ def process_issue(issue):
         if Path(file_path).is_file():
             file_contents += f"\nContent of {file_path}:\n```\n{get_file_content(file_path)}\n```\n"
 
-    # Second prompt with file contents
+    # Second prompt with file contents and request for specific code changes
     detailed_prompt = f"""
     Based on the initial analysis and the content of the relevant files, provide a detailed solution:
 
@@ -135,12 +224,22 @@ def process_issue(issue):
     {file_contents}
 
     Please provide:
-    1. A detailed solution to the issue, including specific code changes if applicable.
-    2. An explanation of why these changes would resolve the issue.
-    3. Any potential side effects or considerations to keep in mind when implementing this solution.
+    1. A detailed explanation of the solution.
+    2. Specific code changes needed, using markdown code blocks with 'File:' headers for each change, like this:
+       ```python
+       File: path/to/file.py
+       # Your code here
+       ```
+    3. An explanation of why these changes would resolve the issue.
+    4. Any potential side effects or considerations.
+
+    Make sure to include the complete file content for any files that need changes, not just the changed portions.
     """
 
     detailed_solution = query_gemini(detailed_prompt)
+    
+    # Extract code changes from the solution
+    code_changes = parse_code_blocks(detailed_solution)
     
     comment_body = f"""
     ## AI-generated suggestion
@@ -149,12 +248,18 @@ def process_issue(issue):
 
     {detailed_solution}
 
-    Please review this suggestion and let me know if you need any clarification or have any questions.
-    This is an AI-generated response and may require human validation and testing before implementation.
+    I'll create a pull request with these suggested changes.
+    This is an AI-generated response and requires human validation and testing before implementation.
     """
     
     issue.create_comment(comment_body)
     print(f"Commented on issue #{issue.number}")
+    
+    if code_changes:
+        pr = create_pull_request(repo, issue, detailed_solution, code_changes)
+        print(f"Created pull request #{pr.number}")
+    else:
+        print("No code changes found in the solution")
 
 def handle_event():
     """Parse and handle GitHub event"""
