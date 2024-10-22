@@ -1,5 +1,6 @@
 name: 'Issue Resolution with Gemini Flash'
 description: 'Analyzes GitHub issues and provides AI-generated suggestions using Gemini Flash'
+
 inputs:
   github_token:
     description: 'GitHub token'
@@ -11,10 +12,32 @@ inputs:
     description: 'Maximum number of tokens for Gemini Flash response'
     required: false
     default: '8192'
+
 runs:
-  using: 'docker'
-  image: 'docker://ghcr.io/laurigates/gha-issue-resolution:main'
-  env:
-    GITHUB_TOKEN: ${{ inputs.github_token }}
-    GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
-    MAX_TOKENS: ${{ inputs.max_tokens }}
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      shell: bash
+      run: |
+        pip install --no-cache-dir google-generativeai PyGithub
+    
+    - name: Run issue resolution script
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
+        MAX_TOKENS: ${{ inputs.max_tokens }}
+        PYTHONUNBUFFERED: 1
+      run: |
+        # Print event information for debugging
+        echo "Event name: $GITHUB_EVENT_NAME"
+        echo "Event path: $GITHUB_EVENT_PATH"
+        cat $GITHUB_EVENT_PATH
+        # Run the script
+        python -m ${{ github.action_path }}/src/gha_issue_resolution
