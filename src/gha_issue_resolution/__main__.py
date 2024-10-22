@@ -8,6 +8,7 @@ from google.generativeai.types import GenerationConfig
 import base64
 import re
 from datetime import datetime, timedelta, timezone
+import traceback
 
 def setup_github():
     """Setup GitHub client and get repository"""
@@ -20,6 +21,7 @@ def setup_github():
         raise
     except Exception as e:
         print(f"Error setting up GitHub client: {e}")
+        print(traceback.format_exc())
         raise
 
 # Setup GitHub client
@@ -67,43 +69,100 @@ def get_file_content(file_path, max_chars=100000):
                 content += "\n... (file truncated due to size)"
             return content
     except Exception as e:
+        print(f"Error reading file {file_path}: {str(e)}")
+        print(traceback.format_exc())
         return f"Error reading file: {str(e)}"
 
 def query_gemini(prompt):
-    model = genai.GenerativeModel(
-        MODEL_ID,
-        generation_config=generation_config,
-        safety_settings=safety_settings,
-    )
-    response = model.generate_content([
-        genai.types.ContentDict({
-            'role': 'user',
-            'parts': [
-                "You are an AI assistant specialized in analyzing GitHub issues and suggesting solutions. "
-                "Your task is to provide detailed, actionable advice for resolving the given issue. "
-                "When suggesting code changes, always include the complete file content with your changes, "
-                "not just the changed portions. Use markdown code blocks with 'File:' headers for each file.",
-                prompt
-            ]
-        })
-    ])
-    print(f"\nUsage metadata:\n{response.prompt_feedback}")
-    print(f"\nFinish reason:\n{response.candidates[0].finish_reason}")
-    print(f"\nSafety ratings:\n{response.candidates[0].safety_ratings}")
-    return response.text
+    try:
+        model = genai.GenerativeModel(
+            MODEL_ID,
+            generation_config=generation_config,
+            safety_settings=safety_settings,
+        )
+        response = model.generate_content([
+            genai.types.ContentDict({
+                'role': 'user',
+                'parts': [
+                    """You are an AI assistant specialized in analyzing GitHub issues and suggesting solutions.
+                    When suggesting code changes, you MUST follow these rules:
+                    1. Always include the complete file content, not just the changes
+                    2. Use markdown code blocks for each file change
+                    3. Start each code block with 'File: filename.ext' on its own line
+                    4. Make sure to use the correct file paths
+                    
+                    Example format:
+                    File: src/example.py
+                    ```python
+                    # Complete file content here
+                    ```
+                    """,
+                    prompt
+                ]
+            })
+        ])
+        print(f"\nUsage metadata:\n{response.prompt_feedback}")
+        print(f"\nFinish reason:\n{response.candidates[0].finish_reason}")
+        print(f"\nSafety ratings:\n{response.candidates[0].safety_ratings}")
+        return response.text
+    except Exception as e:
+        print(f"Error querying Gemini: {str(e)}")
+        print(traceback.format_exc())
+        raise
 
 def parse_code_blocks(solution_text):
     """Extract code blocks and their file paths from the solution text"""
-    # Pattern to match markdown code blocks with optional file paths
-    pattern = r'```(?:[\w-]+)?\s*(?:File:\s*([\w/.,-]+))?\n(.*?)```'
-    matches = re.finditer(pattern, solution_text, re.DOTALL)
+    print("\nParsing code blocks from solution...")
+    print(f"Solution text length: {len(solution_text)}")
     
+    # First look for the explicit format we requested
+    pattern = r'File:\s*([\w/.,-]+)\n```[\w-]*\n(.*?)```'
+    matches = re.finditer(pattern, solution_text, re.DOTALL)
     code_changes = []
+    
     for match in matches:
-        file_path = match.group(1)
+        file_path = match.group(1).strip()
         code = match.group(2).strip()
-        if file_path:
+        print(f"\nFound code block for file: {file_path}")
+        print(f"Code length: {len(code)}")
+        if file_path and code:
             code_changes.append((file_path, code))
+    
+    # If no matches found, try alternative formats
+    if not code_changes:
+        print("\nNo matches found with primary pattern, trying alternative patterns...")
+        # Look for code blocks with file paths in the preceding text
+        lines = solution_text.split('\n')
+        current_file = None
+        current_code = []
+        in_code_block = False
+        
+        for line in lines:
+            # Check for file path indicators
+            file_match = re.search(r'(?:in|for|to|update|create|modify|file:?)\s+[`"]?([\w/.,-]+\.[a-zA-Z]+)[`"]?', line, re.IGNORECASE)
+            if file_match and not in_code_block:
+                if current_file and current_code:
+                    code_changes.append((current_file, '\n'.join(current_code)))
+                current_file = file_match.group(1)
+                current_code = []
+                print(f"\nFound file reference: {current_file}")
+            
+            # Track code blocks
+            if line.startswith('```'):
+                in_code_block = not in_code_block
+                continue
+            
+            if in_code_block and current_file:
+                current_code.append(line)
+        
+        # Add the last file if exists
+        if current_file and current_code:
+            code_changes.append((current_file, '\n'.join(current_code)))
+    
+    print(f"\nTotal code changes found: {len(code_changes)}")
+    for file_path, code in code_changes:
+        print(f"- {file_path}: {len(code)} characters")
+    
     return code_changes
 
 def create_branch(repo, base_branch='main'):
@@ -116,20 +175,22 @@ def create_branch(repo, base_branch='main'):
             base_branch = 'master'
             base_ref = repo.get_git_ref(f"heads/{base_branch}")
             
-        # Use timezone-aware datetime for the timestamp
         timestamp = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
         branch_name = f"ai-suggestion-{timestamp}-{os.urandom(2).hex()}"
         repo.create_git_ref(f"refs/heads/{branch_name}", base_ref.object.sha)
         print(f"Created branch: {branch_name} from {base_branch}")
         return branch_name
     except Exception as e:
-        print(f"Error creating branch: {e}")
+        print(f"Error creating branch: {str(e)}")
+        print(traceback.format_exc())
         raise
 
 def update_file(repo, file_path, content, branch, commit_message):
     """Update or create a file in the repository"""
     try:
         print(f"Attempting to update file: {file_path} on branch: {branch}")
+        print(f"Content length: {len(content)}")
+        
         # Try to get existing file
         try:
             file = repo.get_contents(file_path, ref=branch)
@@ -143,7 +204,6 @@ def update_file(repo, file_path, content, branch, commit_message):
             print(f"Updated existing file: {file_path}")
         except Exception as e:
             print(f"File {file_path} doesn't exist, creating new file. Error was: {str(e)}")
-            # File doesn't exist, create it
             repo.create_file(
                 file_path,
                 commit_message,
@@ -152,19 +212,22 @@ def update_file(repo, file_path, content, branch, commit_message):
             )
             print(f"Created new file: {file_path}")
     except Exception as e:
-        print(f"Error updating file {file_path}: {e}")
+        print(f"Error updating file {file_path}: {str(e)}")
+        print(traceback.format_exc())
         raise
 
 def create_pull_request(repo, issue, solution_text, code_changes):
     """Create a pull request with the suggested changes"""
     try:
-        print("Creating pull request...")
+        print("\nCreating pull request...")
+        print(f"Number of code changes to apply: {len(code_changes)}")
+        
         # Create a new branch
         branch_name = create_branch(repo)
         
         # Apply each code change
         for file_path, new_content in code_changes:
-            print(f"Processing changes for file: {file_path}")
+            print(f"\nProcessing changes for file: {file_path}")
             update_file(
                 repo,
                 file_path,
@@ -194,162 +257,147 @@ This is an AI-generated pull request. Please review the changes carefully before
         
         return pr
     except Exception as e:
-        print(f"Error creating pull request: {e}")
+        print(f"Error creating pull request: {str(e)}")
+        print(traceback.format_exc())
         raise
 
-def check_recent_bot_activity(issue, hours=24):
-    """Check if the bot has commented on this issue recently"""
-    # Use timezone-aware datetime
-    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
-    
+def get_bot_comments(issue):
+    """Get all AI-generated comments on the issue"""
+    bot_comments = []
     for comment in issue.get_comments():
-        # GitHub API returns timezone-aware datetimes
         if "AI-generated suggestion" in comment.body:
-            if comment.created_at > cutoff_time:
-                print(f"Found recent bot activity from {comment.created_at}")
-                return True
-    return False
+            bot_comments.append(comment)
+    return bot_comments
 
 def process_issue(issue):
-    print(f"Processing issue #{issue.number}: {issue.title}")
+    print(f"\nProcessing issue #{issue.number}: {issue.title}")
+    print(f"Issue body: {issue.body}")
     
-    # Check if we've already processed this issue recently
-    if check_recent_bot_activity(issue):
-        print(f"Recently processed issue #{issue.number}. Skipping.")
-        return
-
-    print("Getting repository structure...")
-    repo_structure = get_repo_structure()
-    initial_prompt = f"""
-    Analyze this GitHub issue and suggest a solution based on the repository structure:
+    # Get any existing bot comments
+    bot_comments = get_bot_comments(issue)
     
-    Issue Title: {issue.title}
-    Issue Body: {issue.body}
+    # Check if issue needs analysis comment
+    needs_analysis = not bot_comments
     
-    Repository Structure:
-    {repo_structure}
+    if needs_analysis:
+        print("\nGenerating initial analysis...")
+        # Generate and post initial analysis
+        repo_structure = get_repo_structure()
+        initial_prompt = f"""
+        Analyze this GitHub issue and suggest a solution based on the repository structure:
+        
+        Issue Title: {issue.title}
+        Issue Body: {issue.body}
+        
+        Repository Structure:
+        {repo_structure}
+        
+        Provide:
+        1. A brief analysis of the issue.
+        2. A list of files that are likely relevant to this issue (up to 5 files).
+        3. An initial approach for solving this issue.
+        """
+        
+        initial_response = query_gemini(initial_prompt)
+        
+        # Extract file paths from the initial response
+        file_paths = [line.split()[-1] for line in initial_response.split('\n') if line.startswith('-') and '.' in line]
+        print(f"\nIdentified relevant files: {file_paths}")
+        
+        # Get content of identified files
+        file_contents = ""
+        for file_path in file_paths[:5]:  # Limit to 5 files
+            if Path(file_path).is_file():
+                content = get_file_content(file_path)
+                file_contents += f"\nContent of {file_path}:\n```\n{content}\n```\n"
+                print(f"Added content of {file_path}")
+
+        detailed_prompt = f"""
+        Based on the initial analysis and the content of the relevant files, provide a detailed solution:
+
+        Issue Title: {issue.title}
+        Issue Body: {issue.body}
+
+        Initial Analysis and Suggestion:
+        {initial_response}
+
+        Relevant File Contents:
+        {file_contents}
+
+        Please provide:
+        1. A detailed explanation of the solution.
+        2. Specific code changes needed. For each file that needs changes, provide the COMPLETE file content (not just the changes) in this exact format:
+           
+           File: path/to/file.py
+           ```python
+           # Complete file content here
+           ```
+
+        3. An explanation of why these changes would resolve the issue.
+        4. Any potential side effects or considerations.
+
+        Remember: Always include the COMPLETE file content for any files that need changes, not just the modified portions.
+        """
+
+        print("\nGenerating detailed solution...")
+        detailed_solution = query_gemini(detailed_prompt)
+        
+        comment_body = f"""
+        ## AI-generated suggestion
+
+        Here's a potential solution to this issue, generated by an AI assistant:
+
+        {detailed_solution}
+
+        I can create a pull request with these suggested changes. Please review the suggestion and add any additional comments or requirements.
+        This is an AI-generated response and requires human validation and testing before implementation.
+        """
+        
+        comment = issue.create_comment(comment_body)
+        print(f"\nAdded initial analysis comment: {comment.html_url}")
+        bot_comments = [comment]  # Update bot_comments with the new comment
     
-    Provide:
-    1. A brief analysis of the issue.
-    2. A list of files that are likely relevant to this issue (up to 5 files).
-    3. An initial approach for solving this issue.
-    """
+    # Get the most recent bot comment
+    latest_bot_comment = bot_comments[-1]
     
-    print("Generating initial analysis...")
-    initial_response = query_gemini(initial_prompt)
+    # Look for additional human comments after the last bot comment
+    all_comments = list(issue.get_comments())
+    last_bot_index = all_comments.index(latest_bot_comment)
+    human_feedback = []
+    for comment in all_comments[last_bot_index + 1:]:
+        if "AI-generated suggestion" not in comment.body:
+            human_feedback.append(comment.body)
     
-    # Extract file paths from the initial response
-    file_paths = [line.split()[-1] for line in initial_response.split('\n') if line.startswith('-') and '.' in line]
-    print(f"Identified relevant files: {file_paths}")
-    
-    # Get content of identified files
-    file_contents = ""
-    for file_path in file_paths[:5]:  # Limit to 5 files
-        if Path(file_path).is_file():
-            content = get_file_content(file_path)
-            file_contents += f"\nContent of {file_path}:\n```\n{content}\n```\n"
-            print(f"Added content of {file_path}")
-
-    # Second prompt with file contents and request for specific code changes
-    detailed_prompt = f"""
-    Based on the initial analysis and the content of the relevant files, provide a detailed solution:
-
-    Issue Title: {issue.title}
-    Issue Body: {issue.body}
-
-    Initial Analysis and Suggestion:
-    {initial_response}
-
-    Relevant File Contents:
-    {file_contents}
-
-    Please provide:
-    1. A detailed explanation of the solution.
-    2. Specific code changes needed, using markdown code blocks with 'File:' headers for each change, like this:
-       ```python
-       File: path/to/file.py
-       # Your code here
-       ```
-    3. An explanation of why these changes would resolve the issue.
-    4. Any potential side effects or considerations.
-
-    Make sure to include the complete file content for any files that need changes, not just the changed portions.
-    """
-
-    print("Generating detailed solution...")
-    detailed_solution = query_gemini(detailed_prompt)
-    
-    # Extract code changes from the solution
-    code_changes = parse_code_blocks(detailed_solution)
-    print(f"Found {len(code_changes)} code changes to implement")
-    
-    comment_body = f"""
-    ## AI-generated suggestion
-
-    Here's a potential solution to this issue, generated by an AI assistant:
-
-    {detailed_solution}
-
-    {'' if not code_changes else "I'll create a pull request with these suggested changes."}
-    This is an AI-generated response and requires human validation and testing before implementation.
-    """
-    
-    comment = issue.create_comment(comment_body)
-    print(f"Added comment to issue: {comment.html_url}")
+    # Generate pull request if there's a solution in the bot comments
+    print("\nExtracting code changes from previous analysis...")
+    code_changes = parse_code_blocks(latest_bot_comment.body)
     
     if code_changes:
-        pr = create_pull_request(repo, issue, detailed_solution, code_changes)
-        print(f"Created pull request #{pr.number}")
-    else:
-        print("No code changes found in the solution")
-
-def handle_event():
-    """Parse and handle GitHub event"""
-    event_name = os.environ.get('GITHUB_EVENT_NAME')
-    event_path = os.environ.get('GITHUB_EVENT_PATH')
-    
-    if not event_name or not event_path:
-        print("No GitHub event information found")
-        return None, None
-    
-    try:
-        with open(event_path, 'r') as f:
-            event_data = json.load(f)
-            print(f"Event data: {json.dumps(event_data, indent=2)}")
-            return event_name, event_data
-    except Exception as e:
-        print(f"Error reading event data: {e}")
-        return None, None
-
-def main():
-    print(f"Starting Issue Resolution with Gemini Flash (Model: {MODEL_ID})")
-    
-    # Handle GitHub event
-    event_name, event_data = handle_event()
-    
-    if event_name == 'issues':
-        action = event_data.get('action')
-        if action in ['opened', 'reopened', 'edited']:
-            issue_number = event_data['issue']['number']
-            print(f"Processing issue #{issue_number}")
-            issue = repo.get_issue(issue_number)
-            process_issue(issue)
-        else:
-            print(f"Ignoring issue event with action: {action}")
+        print(f"\nFound {len(code_changes)} code changes to implement")
+        
+        if human_feedback:
+            # If there's human feedback, generate an updated solution
+            feedback_prompt = f"""
+            Please review the previous solution and the human feedback to generate an updated solution.
             
-    elif event_name == 'pull_request':
-        print("Pull request event detected, but no action needed")
+            Previous solution:
+            {latest_bot_comment.body}
+            
+            Human feedback:
+            {'\n'.join(human_feedback)}
+            
+            Provide an updated solution incorporating the feedback, using the same format as before.
+            Make sure to include complete file contents in the code blocks.
+            """
+            
+            print("\nGenerating updated solution based on feedback...")
+            updated_solution = query_gemini(feedback_prompt)
+            updated_code_changes = parse_code_blocks(updated_solution)
+            
+            if updated_code_changes:
+                code_changes = updated_code_changes
+                print(f"Using updated solution with {len(code_changes)} code changes")
         
-    elif event_name:
-        print(f"Unsupported event type: {event_name}")
-        
-    else:
-        print("No specific event detected, checking for open issues...")
-        open_issues = repo.get_issues(state='open')
-        for issue in open_issues:
-            process_issue(issue)
-
-    print("Finished Issue Resolution with Gemini Flash")
-
-if __name__ == "__main__":
-    main()
+        try:
+            pr = create_pull_request(repo, issue, latest_bot_comment.body, code_changes)
+            print(f"Created pull request #{pr.
