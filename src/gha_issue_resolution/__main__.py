@@ -7,7 +7,7 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from google.generativeai.types import GenerationConfig
 import base64
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 def setup_github():
     """Setup GitHub client and get repository"""
@@ -80,7 +80,9 @@ def query_gemini(prompt):
             'role': 'user',
             'parts': [
                 "You are an AI assistant specialized in analyzing GitHub issues and suggesting solutions. "
-                "Your task is to provide detailed, actionable advice for resolving the given issue.",
+                "Your task is to provide detailed, actionable advice for resolving the given issue. "
+                "When suggesting code changes, always include the complete file content with your changes, "
+                "not just the changed portions. Use markdown code blocks with 'File:' headers for each file.",
                 prompt
             ]
         })
@@ -114,7 +116,8 @@ def create_branch(repo, base_branch='main'):
             base_branch = 'master'
             base_ref = repo.get_git_ref(f"heads/{base_branch}")
             
-        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        # Use timezone-aware datetime for the timestamp
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
         branch_name = f"ai-suggestion-{timestamp}-{os.urandom(2).hex()}"
         repo.create_git_ref(f"refs/heads/{branch_name}", base_ref.object.sha)
         print(f"Created branch: {branch_name} from {base_branch}")
@@ -196,11 +199,14 @@ This is an AI-generated pull request. Please review the changes carefully before
 
 def check_recent_bot_activity(issue, hours=24):
     """Check if the bot has commented on this issue recently"""
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    # Use timezone-aware datetime
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
     
     for comment in issue.get_comments():
+        # GitHub API returns timezone-aware datetimes
         if "AI-generated suggestion" in comment.body:
             if comment.created_at > cutoff_time:
+                print(f"Found recent bot activity from {comment.created_at}")
                 return True
     return False
 
@@ -212,6 +218,7 @@ def process_issue(issue):
         print(f"Recently processed issue #{issue.number}. Skipping.")
         return
 
+    print("Getting repository structure...")
     repo_structure = get_repo_structure()
     initial_prompt = f"""
     Analyze this GitHub issue and suggest a solution based on the repository structure:
