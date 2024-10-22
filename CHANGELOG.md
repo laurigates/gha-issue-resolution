@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.0.1...v1.1.0) (2024-10-22)
+
+
+### Features
+
+* Remove build workflow ([536f1ed](https://github.com/laurigates/gha-issue-resolution/commit/536f1ed0a215a48b573955f9223fb33c142df07d))
+* update issue resolution workflow ([7783003](https://github.com/laurigates/gha-issue-resolution/commit/778300350b341287f8f74fa767f7fdb1cdbf4301))
+* update to use composite runner and setup python ([77c98eb](https://github.com/laurigates/gha-issue-resolution/commit/77c98ebd731070126dad5f621d8ec2b3aff3314b))
+
+
+### Bug Fixes
+
+* container image build ([b470154](https://github.com/laurigates/gha-issue-resolution/commit/b470154e11a7acbe85ad170a6302afe58d43c5df))
+* **deps:** add missing grpcio ([f03e597](https://github.com/laurigates/gha-issue-resolution/commit/f03e5979f1a9b060f93f28e15fd5a6b02119c789))
+
 ## [1.0.1](https://github.com/laurigates/gha-issue-resolution/compare/v1.0.0...v1.0.1) (2024-10-19)
 
 
