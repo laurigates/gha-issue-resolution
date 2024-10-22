@@ -1,23 +1,13 @@
-name: Issue Resolution
-
+name: Analyze Issues
 on:
   issues:
-    types: [opened, reopened, commented]
-  schedule:
-    - cron: '0 0 * * *'  # Run daily at midnight
-  workflow_dispatch:  # Allow manual triggering
+    types: [opened, reopened, edited]
 
 jobs:
-  resolve_issues:
+  analyze:
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
-      contents: write
     steps:
-    - uses: actions/checkout@v3
-    - name: Issue Resolution with Gemini
-      uses: laurigates/gha-issue-resolution@main
-      with:
-        github_token: ${{ secrets.MY_GITHUB_TOKEN }}
-        gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+      - uses: laurigates/gha-issue-resolution@main
+        with:
+          github_token: ${{ secrets.MY_GITHUB_TOKEN }}
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
