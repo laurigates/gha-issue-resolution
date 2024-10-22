@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.1.0...v1.2.0) (2024-10-22)
+
+
+### Features
+
+* add checkout repository step ([e90c2fc](https://github.com/laurigates/gha-issue-resolution/commit/e90c2fccb5f2e032b1ba23a3bb98c1eb8d0537a7))
+* implement creating PR based on solution ([0523531](https://github.com/laurigates/gha-issue-resolution/commit/0523531cb767171cfbac2d0f99624df0c2ce546b))
+
 ## [1.1.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.0.1...v1.1.0) (2024-10-22)
 
 
