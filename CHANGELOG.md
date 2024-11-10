@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/laurigates/gha-issue-resolution/compare/v1.2.0...v1.2.1) (2024-11-10)
+
+
+### Bug Fixes
+
+* import issues ([5a2c17f](https://github.com/laurigates/gha-issue-resolution/commit/5a2c17fd7a424c8de279b8e020d1089e060db28d))
+* pdm install syntax ([2b53d90](https://github.com/laurigates/gha-issue-resolution/commit/2b53d90d278c5b03a137f1fe808e4da4c1591bb6))
+
 ## [1.2.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.1.0...v1.2.0) (2024-10-22)
 
 
