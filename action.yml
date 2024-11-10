@@ -35,8 +35,8 @@ runs:
       shell: bash
       run: |
         cd ${{ github.action_path }}
-        pdm install -G :all
-        pdm install -e .
+        pdm config python.use_venv false
+        pdm install --dev
     
     - name: Run issue resolution script
       shell: bash
