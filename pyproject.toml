@@ -1,19 +1,27 @@
 [project]
 name = "gha-issue-resolution"
 version = "0.1.0"
-description = "Default template for PDM package"
+description = "GitHub Issue Resolution with Gemini Flash"
 authors = [
     {name = "Lauri Gates", email = "lauri.gates@forumvirium.fi"},
 ]
 dependencies = [
-    "PyGithub==1.55",
-    "requests==2.26.0",
+    "PyGithub>=1.55",
     "google-generativeai>=0.8.3",
-    "grpcio>=1.67.0",
 ]
-requires-python = "==3.12.*"
+requires-python = ">=3.12"
 readme = "README.md"
 license = {text = "MIT"}
 
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
 [tool.pdm]
 distribution = false
+package-type = "library"
+
+[tool.pdm.dev-dependencies]
+
+[tool.pdm.scripts]
+start = "python -m gha_issue_resolution"
