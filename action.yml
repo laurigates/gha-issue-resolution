@@ -44,4 +44,4 @@ runs:
         echo "Event path: $GITHUB_EVENT_PATH"
         cat $GITHUB_EVENT_PATH
         # Run the script
-        python -m ${{ github.action_path }}/src/gha_issue_resolution
+        python ${{ github.action_path }}/src/gha_issue_resolution
