@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.2.1...v1.3.0) (2024-11-10)
+
+
+### Features
+
+* add comment triggers and improve code organization ([#22](https://github.com/laurigates/gha-issue-resolution/issues/22)) ([5739f34](https://github.com/laurigates/gha-issue-resolution/commit/5739f34a52aa7c1222fcd63cd0eab6fb872b75dd))
+
 ## [1.2.1](https://github.com/laurigates/gha-issue-resolution/compare/v1.2.0...v1.2.1) (2024-11-10)
 
 
