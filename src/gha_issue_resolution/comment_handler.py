@@ -2,6 +2,9 @@ from pathlib import Path
 from gha_issue_resolution.ai_utils import query_gemini, generate_detailed_prompt
 from gha_issue_resolution.file_utils import get_repo_structure
 
+TRIGGER_PR_COMMENT = "/create-pr"
+TRIGGER_UPDATE_COMMENT = "/update"
+
 def create_analysis_comment(issue):
     """Generate and post initial analysis comment"""
     print("\nGenerating initial analysis...")
@@ -39,7 +42,9 @@ def create_analysis_comment(issue):
 
     {detailed_solution}
 
-    I can create a pull request with these suggested changes. Please review the suggestion and add any additional comments or requirements.
+    To create a pull request with these changes, comment with: `{TRIGGER_PR_COMMENT}`
+    To get an updated analysis, comment with: `{TRIGGER_UPDATE_COMMENT}`
+    
     This is an AI-generated response and requires human validation and testing before implementation.
     """
     
@@ -47,11 +52,52 @@ def create_analysis_comment(issue):
     print(f"\nAdded initial analysis comment: {comment.html_url}")
     return comment
 
+def create_response_comment(issue, trigger_comment):
+    """Generate and post a response to a human comment"""
+    print("\nGenerating response to comment...")
+    
+    # Get the conversation history
+    comments = list(issue.get_comments())
+    conversation = []
+    for comment in comments:
+        if comment.user.login == issue.user.login:
+            conversation.append(f"User: {comment.body}")
+        elif "AI-generated suggestion" in comment.body:
+            conversation.append(f"Assistant: {comment.body}")
+    
+    response_prompt = f"""
+    Please provide a response to this comment in the context of the GitHub issue:
+    
+    Issue Title: {issue.title}
+    Issue Body: {issue.body}
+    
+    Previous conversation:
+    {'\n'.join(conversation)}
+    
+    Latest comment to respond to:
+    {trigger_comment.body}
+    """
+    
+    response = query_gemini(response_prompt)
+    
+    comment_body = f"""
+    ## AI-generated response
+
+    {response}
+
+    To create a pull request with any code changes suggested above, comment with: `{TRIGGER_PR_COMMENT}`
+    To get an updated analysis, comment with: `{TRIGGER_UPDATE_COMMENT}`
+    """
+    
+    comment = issue.create_comment(comment_body)
+    print(f"\nAdded response comment: {comment.html_url}")
+    return comment
+
 def get_bot_comments(issue):
     """Get all AI-generated comments on the issue"""
     bot_comments = []
     for comment in issue.get_comments():
-        if "AI-generated suggestion" in comment.body:
+        if "AI-generated suggestion" in comment.body or "AI-generated response" in comment.body:
             bot_comments.append(comment)
     return bot_comments
 
@@ -61,6 +107,14 @@ def get_human_feedback(issue, last_bot_comment):
     last_bot_index = all_comments.index(last_bot_comment)
     human_feedback = []
     for comment in all_comments[last_bot_index + 1:]:
-        if "AI-generated suggestion" not in comment.body:
+        if "AI-generated" not in comment.body:
             human_feedback.append(comment.body)
     return human_feedback
+
+def check_triggers(comment):
+    """Check if a comment contains trigger commands"""
+    if not comment or not hasattr(comment, 'body'):
+        return False, False
+    
+    body = comment.body.lower()
+    return TRIGGER_PR_COMMENT.lower() in body, TRIGGER_UPDATE_COMMENT.lower() in body

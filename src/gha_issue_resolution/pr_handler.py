@@ -4,7 +4,10 @@ from gha_issue_resolution.github_utils import create_pull_request
 def create_pr_from_analysis(repo, issue, analysis_comment):
     """Create a pull request based on the analysis comment"""
     print("\nExtracting code changes from analysis...")
-    code_changes = parse_code_blocks(analysis_comment.body)
+    
+    # Handle both string and comment object
+    analysis_text = analysis_comment.body if hasattr(analysis_comment, 'body') else analysis_comment
+    code_changes = parse_code_blocks(analysis_text)
     
     if not code_changes:
         print("No code changes found in the analysis")
@@ -13,7 +16,7 @@ def create_pr_from_analysis(repo, issue, analysis_comment):
     print(f"\nFound {len(code_changes)} code changes to implement")
     
     try:
-        pr = create_pull_request(repo, issue, analysis_comment.body, code_changes)
+        pr = create_pull_request(repo, issue, analysis_text, code_changes)
         print(f"Created pull request #{pr.number}")
         return pr
     except Exception as e:
@@ -33,11 +36,13 @@ def update_pr_with_feedback(repo, issue, analysis_comment, human_feedback):
     if not human_feedback:
         return None
         
+    analysis_text = analysis_comment.body if hasattr(analysis_comment, 'body') else analysis_comment
+    
     feedback_prompt = f"""
     Please review the previous solution and the human feedback to generate an updated solution.
     
     Previous solution:
-    {analysis_comment.body}
+    {analysis_text}
     
     Human feedback:
     {'\n'.join(human_feedback)}
