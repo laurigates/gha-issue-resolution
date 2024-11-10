@@ -4,7 +4,7 @@ from gha_issue_resolution.github_utils import create_pull_request, get_bot_comme
 from gha_issue_resolution.ai_utils import query_gemini, parse_code_blocks, generate_detailed_prompt
 from gha_issue_resolution.file_utils import get_repo_structure, get_file_content
 
-def process_issue(issue):
+def process_issue(repo, issue):  # Added repo parameter
     print(f"\nProcessing issue #{issue.number}: {issue.title}")
     print(f"Issue body: {issue.body}")
     
@@ -39,7 +39,7 @@ def process_issue(issue):
         file_paths = [line.split()[-1] for line in initial_response.split('\n') if line.startswith('-') and '.' in line]
         print(f"\nIdentified relevant files: {file_paths}")
         
-        # Use the new prompt generator
+        # Use the prompt generator
         detailed_prompt = generate_detailed_prompt(issue, initial_response, file_paths)
 
         print("\nGenerating detailed solution...")
