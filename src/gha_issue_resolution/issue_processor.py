@@ -1,8 +1,8 @@
 from pathlib import Path
 import traceback
-from .github_utils import create_pull_request, get_bot_comments
-from .ai_utils import query_gemini, parse_code_blocks, generate_detailed_prompt
-from .file_utils import get_repo_structure, get_file_content
+from gha_issue_resolution.github_utils import create_pull_request, get_bot_comments
+from gha_issue_resolution.ai_utils import query_gemini, parse_code_blocks, generate_detailed_prompt
+from gha_issue_resolution.file_utils import get_repo_structure, get_file_content
 
 def process_issue(issue):
     print(f"\nProcessing issue #{issue.number}: {issue.title}")

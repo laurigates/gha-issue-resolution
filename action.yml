@@ -25,11 +25,18 @@ runs:
         python-version: '3.12'
         cache: 'pip'
     
-    - name: Install dependencies
+    - name: Install PDM
       shell: bash
       run: |
         python -m pip install --upgrade pip
-        pip install --no-cache-dir google-generativeai PyGithub
+        pip install pdm
+    
+    - name: Install dependencies
+      shell: bash
+      run: |
+        cd ${{ github.action_path }}
+        pdm install -G :all
+        pdm install -e .
     
     - name: Run issue resolution script
       shell: bash
@@ -37,11 +44,8 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
         MAX_TOKENS: ${{ inputs.max_tokens }}
+        PYTHONPATH: ${{ github.action_path }}/src
         PYTHONUNBUFFERED: 1
       run: |
-        # Print event information for debugging
-        echo "Event name: $GITHUB_EVENT_NAME"
-        echo "Event path: $GITHUB_EVENT_PATH"
-        cat $GITHUB_EVENT_PATH
-        # Run the script
-        python ${{ github.action_path }}/src/gha_issue_resolution
+        cd ${{ github.action_path }}
+        pdm run start

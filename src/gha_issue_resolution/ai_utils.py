@@ -5,7 +5,7 @@ from google.generativeai.types import GenerationConfig
 import traceback
 import re
 from pathlib import Path
-from .file_utils import get_file_content
+from gha_issue_resolution.file_utils import get_file_content
 
 # Setup Gemini API constants
 MODEL_ID = 'gemini-1.5-flash-002'

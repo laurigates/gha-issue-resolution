@@ -3,9 +3,9 @@ import json
 from pathlib import Path
 import traceback
 
-from .github_utils import setup_github
-from .ai_utils import setup_ai
-from .issue_processor import process_issue
+from gha_issue_resolution.github_utils import setup_github
+from gha_issue_resolution.ai_utils import setup_ai
+from gha_issue_resolution.issue_processor import process_issue
 
 def handle_event():
     """Parse and handle GitHub event"""
