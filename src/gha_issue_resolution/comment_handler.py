@@ -1,16 +1,44 @@
 from pathlib import Path
 from gha_issue_resolution.ai_utils import query_gemini, generate_detailed_prompt
-from gha_issue_resolution.file_utils import get_repo_structure
+from gha_issue_resolution.file_utils import get_repo_structure, get_file_content
 
 TRIGGER_PR_COMMENT = "/create-pr"
 TRIGGER_UPDATE_COMMENT = "/update"
 
+def get_relevant_files(repo_structure):
+    """Get files that are likely relevant to code changes"""
+    relevant_extensions = {'.py', '.js', '.ts', '.jsx', '.tsx', '.html', '.css', '.yml', '.yaml', '.json', '.md', '.txt'}
+    files = []
+    
+    for line in repo_structure.split('\n'):
+        if line.strip():
+            file_path = line.strip('- ').strip()
+            if any(file_path.endswith(ext) for ext in relevant_extensions):
+                files.append(file_path)
+    
+    return files
+
 def create_analysis_comment(issue):
     """Generate and post initial analysis comment"""
     print("\nGenerating initial analysis...")
+    
+    # Get repository structure and initial files content
     repo_structure = get_repo_structure()
+    print("\nGetting repository files...")
+    
+    # Get all potentially relevant files
+    relevant_files = get_relevant_files(repo_structure)
+    file_contents = ""
+    
+    # Add content of all files
+    for file_path in relevant_files:
+        if Path(file_path).is_file():
+            content = get_file_content(file_path)
+            file_contents += f"\nContent of {file_path}:\n```\n{content}\n```\n"
+            print(f"Added content of {file_path}")
+
     initial_prompt = f"""
-    Analyze this GitHub issue and suggest a solution based on the repository structure:
+    Analyze this GitHub issue and suggest a solution based on the repository content:
     
     Issue Title: {issue.title}
     Issue Body: {issue.body}
@@ -18,22 +46,52 @@ def create_analysis_comment(issue):
     Repository Structure:
     {repo_structure}
     
-    Provide:
-    1. A brief analysis of the issue.
-    2. A list of files that are likely relevant to this issue (up to 5 files).
-    3. An initial approach for solving this issue.
+    Relevant Files Content:
+    {file_contents}
+    
+    Please provide:
+    1. A detailed analysis of the issue and what needs to be changed
+    2. List the specific files that need modification and explain why
+    3. For each file that needs changes, provide:
+       a. The current state and why it needs to change
+       b. The specific changes required
+       c. Complete code for the changes using this format:
+       
+       File: path/to/file.py (CURRENT CONTENT)
+       ```python
+       # Current content here
+       ```
+       
+       Changes to make:
+       - Detailed description of change 1
+       - Detailed description of change 2
+       
+       File: path/to/file.py (WITH CHANGES)
+       ```python
+       # Complete new content with changes
+       ```
+    
+    4. Explain how these changes will resolve the issue
+    5. Note any potential side effects or additional considerations
     """
     
     initial_response = query_gemini(initial_prompt)
     
-    # Extract file paths from the initial response
-    file_paths = [line.split()[-1] for line in initial_response.split('\n') if line.startswith('-') and '.' in line]
-    print(f"\nIdentified relevant files: {file_paths}")
+    # Extract file paths from the initial response for more detailed analysis
+    identified_files = [
+        line.split()[-1] 
+        for line in initial_response.split('\n') 
+        if line.startswith('-') and '.' in line
+    ]
     
-    # Generate detailed solution
-    detailed_prompt = generate_detailed_prompt(issue, initial_response, file_paths)
-    print("\nGenerating detailed solution...")
-    detailed_solution = query_gemini(detailed_prompt)
+    # Use all identified files for detailed solution
+    if identified_files:
+        print(f"\nIdentified specific files for detailed analysis: {identified_files}")
+        detailed_prompt = generate_detailed_prompt(issue, initial_response, identified_files)
+        print("\nGenerating detailed solution...")
+        detailed_solution = query_gemini(detailed_prompt)
+    else:
+        detailed_solution = initial_response
     
     comment_body = f"""
     ## AI-generated suggestion
@@ -62,8 +120,18 @@ def create_response_comment(issue, trigger_comment):
     for comment in comments:
         if comment.user.login == issue.user.login:
             conversation.append(f"User: {comment.body}")
-        elif "AI-generated suggestion" in comment.body:
+        elif "AI-generated" in comment.body:
             conversation.append(f"Assistant: {comment.body}")
+    
+    # Get repository structure for context
+    repo_structure = get_repo_structure()
+    # Get relevant file contents for context
+    relevant_files = get_relevant_files(repo_structure)
+    file_contents = ""
+    for file_path in relevant_files:
+        if Path(file_path).is_file():
+            content = get_file_content(file_path)
+            file_contents += f"\nContent of {file_path}:\n```\n{content}\n```\n"
     
     response_prompt = f"""
     Please provide a response to this comment in the context of the GitHub issue:
@@ -71,11 +139,34 @@ def create_response_comment(issue, trigger_comment):
     Issue Title: {issue.title}
     Issue Body: {issue.body}
     
+    Repository Structure:
+    {repo_structure}
+    
+    Relevant Files:
+    {file_contents}
+    
     Previous conversation:
     {'\n'.join(conversation)}
     
     Latest comment to respond to:
     {trigger_comment.body}
+    
+    Please provide:
+    1. A direct response to the comment
+    2. If code changes are needed, follow the same format as before:
+       
+       File: path/to/file.py (CURRENT CONTENT)
+       ```python
+       # Current content
+       ```
+       
+       Changes to make:
+       - Description of changes
+       
+       File: path/to/file.py (WITH CHANGES)
+       ```python
+       # New content
+       ```
     """
     
     response = query_gemini(response_prompt)
