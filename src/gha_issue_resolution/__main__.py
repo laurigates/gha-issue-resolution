@@ -43,7 +43,7 @@ def main():
                 issue_number = event_data['issue']['number']
                 print(f"Processing issue #{issue_number}")
                 issue = repo.get_issue(issue_number)
-                process_issue(issue)
+                process_issue(repo, issue)  # Pass repo here
             else:
                 print(f"Ignoring issue event with action: {action}")
                 
@@ -57,7 +57,7 @@ def main():
             print("No specific event detected, checking for open issues...")
             open_issues = repo.get_issues(state='open')
             for issue in open_issues:
-                process_issue(issue)
+                process_issue(repo, issue)  # Pass repo here
 
     except Exception as e:
         print(f"Error in main process: {str(e)}")
