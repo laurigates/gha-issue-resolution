@@ -1,11 +1,9 @@
 """Module for handling GitHub issue comments and triggers"""
-
-import os
-from pathlib import Path
+from typing import List, Tuple
 from github.Issue import Issue
 from github.IssueComment import IssueComment
 from gha_issue_resolution.ai_utils import query_gemini, analyze_issue
-from gha_issue_resolution.file_utils import get_repo_structure, get_file_content
+from gha_issue_resolution.file_utils import get_relevant_files, get_file_content
 from gha_issue_resolution.pr_handler import create_pr_from_analysis
 
 # Command triggers
@@ -31,7 +29,7 @@ RESPONSE_TEMPLATE = """## AI-generated response
 To create a pull request with any code changes suggested above, comment with: `{pr_trigger}`
 To get an updated analysis, comment with: `{update_trigger}`"""
 
-def get_bot_comments(issue: Issue):
+def get_bot_comments(issue: Issue) -> List[IssueComment]:
     """Get all AI-generated comments on the issue"""
     bot_comments = []
     for comment in issue.get_comments():
@@ -39,24 +37,35 @@ def get_bot_comments(issue: Issue):
             bot_comments.append(comment)
     return bot_comments
 
-def get_relevant_files():
-    """Get list of relevant files from repository"""
-    relevant_extensions = {
-        '.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.css',
-        '.yml', '.yaml', '.json', '.md', '.txt'
-    }
+def get_human_feedback(issue: Issue, after_comment: IssueComment) -> List[str]:
+    """Get human feedback comments after a specific comment"""
+    all_comments = list(issue.get_comments())
+    if after_comment not in all_comments:
+        return []
+        
+    last_bot_index = all_comments.index(after_comment)
+    human_feedback = []
     
-    repo_files = []
-    # Walk through the current directory
-    for path in Path('.').rglob('*'):
-        if path.is_file() and '.git' not in str(path):
-            if any(str(path).endswith(ext) for ext in relevant_extensions):
-                repo_files.append(str(path))
+    for comment in all_comments[last_bot_index + 1:]:
+        if "AI-generated" not in comment.body:
+            human_feedback.append(comment.body)
     
-    print(f"\nFound repository files: {repo_files}")
-    return repo_files
+    return human_feedback
 
-def create_analysis_comment(issue: Issue):
+def get_conversation_history(issue: Issue) -> List[str]:
+    """Get formatted conversation history from issue"""
+    comments = list(issue.get_comments())
+    conversation = []
+    
+    for comment in comments:
+        if comment.user.login == issue.user.login:
+            conversation.append(f"User: {comment.body}")
+        elif "AI-generated" in comment.body:
+            conversation.append(f"Assistant: {comment.body}")
+    
+    return conversation
+
+def create_analysis_comment(issue: Issue) -> IssueComment:
     """Generate and post initial analysis comment"""
     print("\nGenerating initial analysis...")
     
@@ -64,50 +73,8 @@ def create_analysis_comment(issue: Issue):
     relevant_files = get_relevant_files()
     print(f"\nAnalyzing {len(relevant_files)} relevant files...")
     
-    # Prepare file contents for analysis
-    file_contents = []
-    for file_path in relevant_files:
-        if Path(file_path).is_file():
-            content = get_file_content(file_path)
-            if content and "Error reading file" not in content:
-                file_contents.append((file_path, content))
-    
-    if not file_contents:
-        print("Warning: No readable files found for analysis")
-        
-    print(f"Prepared {len(file_contents)} files for analysis")
-    for path, content in file_contents:
-        print(f"- {path}: {len(content)} characters")
-    
     # Get analysis
-    prompt = f"""Analyze this GitHub issue and suggest a solution based on the repository content.
-
-Issue Title: {issue.title}
-Issue Body: {issue.body}
-
-Please provide:
-1. A detailed analysis of the issue
-2. List the specific files that need modification and explain why
-3. For each file that needs changes, provide:
-
-   File: path/to/file.py (CURRENT CONTENT)
-   ```python
-   # Current content here
-   ```
-
-   Changes to make:
-   - Detailed description of changes needed
-
-   File: path/to/file.py (WITH CHANGES)
-   ```python
-   # Complete new content with changes
-   ```
-
-4. Explain how these changes will resolve the issue
-5. Note any potential side effects or considerations"""
-
-    print("\nQuerying AI for analysis...")
-    analysis_text = query_gemini(prompt)
+    analysis_text = analyze_issue(issue, relevant_files)
     
     # Format comment using template
     comment_body = ANALYSIS_TEMPLATE.format(
@@ -120,16 +87,12 @@ Please provide:
     print(f"\nAdded analysis comment: {comment.html_url}")
     return comment
 
-def create_response_comment(issue: Issue, trigger_comment: IssueComment):
+def create_response_comment(issue: Issue, trigger_comment: IssueComment) -> IssueComment:
     """Generate and post a response to a human comment"""
     print("\nGenerating response to comment...")
     
-    # Get all comments for context
-    all_comments = list(issue.get_comments())
-    conversation = []
-    for comment in all_comments:
-        author = "User" if comment.user.login == issue.user.login else "Assistant"
-        conversation.append(f"{author}: {comment.body}")
+    # Get conversation history
+    conversation = get_conversation_history(issue)
     
     # Get relevant files
     relevant_files = get_relevant_files()
@@ -170,7 +133,7 @@ Please provide:
    ```
 """
     
-    response = query_gemini(prompt)
+    response = query_gemini(prompt, file_contents)
     
     # Format comment using template
     comment_body = RESPONSE_TEMPLATE.format(
@@ -183,7 +146,7 @@ Please provide:
     print(f"\nAdded response comment: {comment.html_url}")
     return comment
 
-def check_triggers(comment):
+def check_triggers(comment: IssueComment) -> Tuple[bool, bool]:
     """Check if a comment contains trigger commands"""
     if not comment or not hasattr(comment, 'body'):
         return False, False
@@ -198,7 +161,7 @@ def check_triggers(comment):
     
     return create_pr, update_analysis
 
-def process_comment(repo, issue, comment):
+def process_comment(repo, issue: Issue, comment: IssueComment) -> None:
     """Process a single comment on an issue"""
     create_pr, update_analysis = check_triggers(comment)
     
