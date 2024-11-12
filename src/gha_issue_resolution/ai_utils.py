@@ -1,3 +1,4 @@
+"""Module for Gemini AI model integration with file handling support"""
 import os
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -7,6 +8,7 @@ import re
 from pathlib import Path
 from typing import List, Tuple
 import tempfile
+from gha_issue_resolution.file_utils import get_file_content
 
 # Setup Gemini API constants
 MODEL_ID = 'gemini-1.5-flash-002'
@@ -54,18 +56,6 @@ def cleanup_temp_file(filepath: str):
     except Exception as e:
         print(f"Warning: Failed to delete temporary file {filepath}: {e}")
 
-def prepare_file_for_upload(file_path: str) -> str:
-    """Read file content and prepare it for upload"""
-    try:
-        with open(file_path, 'r') as f:
-            content = f.read()
-            if not content.strip():
-                return None
-            return content
-    except Exception as e:
-        print(f"Error reading {file_path}: {e}")
-        return None
-
 def query_gemini(prompt, file_contents: List[Tuple[str, str]] = None):
     """Query Gemini API using File API for large content"""
     try:
@@ -111,6 +101,36 @@ def query_gemini(prompt, file_contents: List[Tuple[str, str]] = None):
         print(traceback.format_exc())
         raise
 
+def parse_code_blocks(solution_text):
+    """Extract code blocks and their file paths from the solution text"""
+    print("\nParsing code blocks from solution...")
+    print(f"Solution text length: {len(solution_text)}")
+    
+    # First pattern: Look for (WITH CHANGES) blocks
+    pattern = r'File:\s*([\w/.,-]+)\s*\(WITH CHANGES\)\n```[\w-]*\n(.*?)```'
+    matches = re.finditer(pattern, solution_text, re.DOTALL)
+    code_changes = []
+    
+    print("\nLooking for code blocks with (WITH CHANGES) marker...")
+    for match in matches:
+        file_path = match.group(1).strip()
+        new_code = match.group(2).strip()
+        print(f"\nFound code block for file: {file_path}")
+        print(f"Code length: {len(new_code)}")
+        
+        if file_path and new_code:
+            if Path(file_path).is_file():
+                current_content = get_file_content(file_path)
+                if current_content.strip() != new_code.strip():
+                    code_changes.append((file_path, new_code))
+                    print(f"Changes detected in {file_path}")
+            else:
+                code_changes.append((file_path, new_code))
+                print(f"New file will be created: {file_path}")
+    
+    print(f"\nTotal code changes found: {len(code_changes)}")
+    return code_changes
+
 def analyze_issue(issue, relevant_files: List[str]) -> str:
     """Analyze issue using File API for file contents"""
     print(f"\nAnalyzing issue with {len(relevant_files)} relevant files...")
@@ -119,8 +139,8 @@ def analyze_issue(issue, relevant_files: List[str]) -> str:
     file_contents = []
     for file_path in relevant_files:
         if Path(file_path).is_file():
-            content = prepare_file_for_upload(file_path)
-            if content:
+            content = get_file_content(file_path)
+            if content and "Error reading file" not in content:
                 file_contents.append((file_path, content))
     
     if not file_contents:
@@ -158,33 +178,3 @@ Please provide:
 """
     
     return query_gemini(prompt, file_contents)
-
-def parse_code_blocks(solution_text):
-    """Extract code blocks and their file paths from the solution text"""
-    print("\nParsing code blocks from solution...")
-    print(f"Solution text length: {len(solution_text)}")
-    
-    # First pattern: Look for (WITH CHANGES) blocks
-    pattern = r'File:\s*([\w/.,-]+)\s*\(WITH CHANGES\)\n```[\w-]*\n(.*?)```'
-    matches = re.finditer(pattern, solution_text, re.DOTALL)
-    code_changes = []
-    
-    print("\nLooking for code blocks with (WITH CHANGES) marker...")
-    for match in matches:
-        file_path = match.group(1).strip()
-        new_code = match.group(2).strip()
-        print(f"\nFound code block for file: {file_path}")
-        print(f"Code length: {len(new_code)}")
-        
-        if file_path and new_code:
-            if Path(file_path).is_file():
-                current_content = prepare_file_for_upload(file_path)
-                if current_content and current_content.strip() != new_code.strip():
-                    code_changes.append((file_path, new_code))
-                    print(f"Changes detected in {file_path}")
-            else:
-                code_changes.append((file_path, new_code))
-                print(f"New file will be created: {file_path}")
-    
-    print(f"\nTotal code changes found: {len(code_changes)}")
-    return code_changes
