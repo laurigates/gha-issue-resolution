@@ -1,10 +1,11 @@
 """Module for handling GitHub issue comments and triggers"""
 
 import os
+from pathlib import Path
 from github.Issue import Issue
 from github.IssueComment import IssueComment
 from gha_issue_resolution.ai_utils import query_gemini, analyze_issue
-from gha_issue_resolution.file_utils import get_repo_structure
+from gha_issue_resolution.file_utils import get_repo_structure, get_file_content
 from gha_issue_resolution.pr_handler import create_pr_from_analysis
 
 # Command triggers
@@ -38,34 +39,75 @@ def get_bot_comments(issue: Issue):
             bot_comments.append(comment)
     return bot_comments
 
-def get_human_feedback(issue: Issue, after_comment: IssueComment):
-    """Get human feedback comments after a specific comment"""
-    all_comments = list(issue.get_comments())
-    last_bot_index = all_comments.index(after_comment)
-    human_feedback = []
+def get_relevant_files():
+    """Get list of relevant files from repository"""
+    relevant_extensions = {
+        '.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.css',
+        '.yml', '.yaml', '.json', '.md', '.txt'
+    }
     
-    for comment in all_comments[last_bot_index + 1:]:
-        if "AI-generated" not in comment.body:
-            human_feedback.append(comment.body)
+    repo_files = []
+    # Walk through the current directory
+    for path in Path('.').rglob('*'):
+        if path.is_file() and '.git' not in str(path):
+            if any(str(path).endswith(ext) for ext in relevant_extensions):
+                repo_files.append(str(path))
     
-    return human_feedback
+    print(f"\nFound repository files: {repo_files}")
+    return repo_files
 
 def create_analysis_comment(issue: Issue):
     """Generate and post initial analysis comment"""
     print("\nGenerating initial analysis...")
     
-    # Get repository structure
-    repo_structure = get_repo_structure()
-    relevant_files = [
-        path for path in repo_structure.split('\n') 
-        if path.strip() and any(path.endswith(ext) for ext in [
-            '.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.css',
-            '.yml', '.yaml', '.json', '.md', '.txt'
-        ])
-    ]
-    
+    # Get relevant files
+    relevant_files = get_relevant_files()
     print(f"\nAnalyzing {len(relevant_files)} relevant files...")
-    analysis_text = analyze_issue(issue, relevant_files)
+    
+    # Prepare file contents for analysis
+    file_contents = []
+    for file_path in relevant_files:
+        if Path(file_path).is_file():
+            content = get_file_content(file_path)
+            if content and "Error reading file" not in content:
+                file_contents.append((file_path, content))
+    
+    if not file_contents:
+        print("Warning: No readable files found for analysis")
+        
+    print(f"Prepared {len(file_contents)} files for analysis")
+    for path, content in file_contents:
+        print(f"- {path}: {len(content)} characters")
+    
+    # Get analysis
+    prompt = f"""Analyze this GitHub issue and suggest a solution based on the repository content.
+
+Issue Title: {issue.title}
+Issue Body: {issue.body}
+
+Please provide:
+1. A detailed analysis of the issue
+2. List the specific files that need modification and explain why
+3. For each file that needs changes, provide:
+
+   File: path/to/file.py (CURRENT CONTENT)
+   ```python
+   # Current content here
+   ```
+
+   Changes to make:
+   - Detailed description of changes needed
+
+   File: path/to/file.py (WITH CHANGES)
+   ```python
+   # Complete new content with changes
+   ```
+
+4. Explain how these changes will resolve the issue
+5. Note any potential side effects or considerations"""
+
+    print("\nQuerying AI for analysis...")
+    analysis_text = query_gemini(prompt)
     
     # Format comment using template
     comment_body = ANALYSIS_TEMPLATE.format(
@@ -89,13 +131,22 @@ def create_response_comment(issue: Issue, trigger_comment: IssueComment):
         author = "User" if comment.user.login == issue.user.login else "Assistant"
         conversation.append(f"{author}: {comment.body}")
     
+    # Get relevant files
+    relevant_files = get_relevant_files()
+    file_contents = []
+    for file_path in relevant_files:
+        if Path(file_path).is_file():
+            content = get_file_content(file_path)
+            if content and "Error reading file" not in content:
+                file_contents.append((file_path, content))
+    
     # Create prompt with conversation context
-    prompt = f"""Please provide a response to this comment in the context of the GitHub issue:
+    prompt = f"""Analyze this GitHub issue comment and provide an appropriate response:
     
 Issue Title: {issue.title}
 Issue Body: {issue.body}
 
-Previous conversation:
+Conversation history:
 {'\n'.join(conversation)}
 
 Latest comment to respond to:
@@ -107,15 +158,15 @@ Please provide:
    
    File: path/to/file.py (CURRENT CONTENT)
    ```python
-   # Current content
+   # Current content here
    ```
    
    Changes to make:
-   - Description of changes
+   - Description of changes needed
    
    File: path/to/file.py (WITH CHANGES)
    ```python
-   # New content
+   # Complete new content with changes
    ```
 """
     
