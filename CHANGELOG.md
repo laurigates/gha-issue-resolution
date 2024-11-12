@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.3.0...v1.4.0) (2024-11-12)
+
+
+### Features
+
+* enhance AI utils ([f07dbf1](https://github.com/laurigates/gha-issue-resolution/commit/f07dbf184c4abb3c2c7fae9b9c08c4fe3db9ac25))
+* **workflow:** Update README.md with expanded features, usage, and technical details ([8e048ec](https://github.com/laurigates/gha-issue-resolution/commit/8e048ecc26dfbad8a4e3fbfc521d03e6f6eb9722))
+
 ## [1.3.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.2.1...v1.3.0) (2024-11-10)
 
 
