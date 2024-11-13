@@ -13,13 +13,21 @@ inputs:
     description: 'Maximum tokens for Gemini response'
     required: false
     default: '8192'
+  event-name:
+    description: 'Name of the triggering event'
+    required: true
+    default: ${{ github.event_name }}
+  event-action:
+    description: 'Action of the triggering event'
+    required: true
+    default: ${{ github.event.action }}
 
 runs:
   using: 'composite'
   steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-    
+      
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -33,12 +41,20 @@ runs:
         pip install pdm
         pdm install
     
+    - name: Echo event details
+      shell: bash
+      run: |
+        echo "Event name: ${{ inputs.event-name }}"
+        echo "Event action: ${{ inputs.event-action }}"
+    
     - name: Run issue resolution
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         MAX_TOKENS: ${{ inputs.max-tokens }}
+        GITHUB_EVENT_NAME: ${{ inputs.event-name }}
+        GITHUB_EVENT_ACTION: ${{ inputs.event-action }}
       run: pdm run start
 
 branding:
