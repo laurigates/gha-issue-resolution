@@ -1,14 +1,23 @@
-name: Analyze Issues
+name: Issue Resolution
+
 on:
   issues:
-    types: [opened, reopened, edited]
-  workflow_dispatch:
+    types: [opened]  # Trigger on new issues
+  issue_comment:
+    types: [created]  # Trigger on new comments
 
 jobs:
-  analyze:
+  resolve:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed for creating branches and PRs
+      issues: write    # Needed for commenting on issues
+      pull-requests: write  # Needed for creating PRs
+    
     steps:
-      - uses: laurigates/gha-issue-resolution@main
+      - name: Run Issue Resolution
+        uses: laurigates/gha-issue-resolution@main
         with:
-          github_token: ${{ secrets.MY_GITHUB_TOKEN }}
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          max-tokens: '8192'
