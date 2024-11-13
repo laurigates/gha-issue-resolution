@@ -7,7 +7,9 @@ from github.PullRequest import PullRequest
 import os
 from datetime import datetime, timezone
 import traceback
+from pathlib import Path
 from gha_issue_resolution.ai_utils import parse_code_blocks
+from gha_issue_resolution.file_utils import get_file_content
 
 def create_branch(repo: Repository, base_branch: str = 'main') -> str:
     """Create a new branch for the changes"""
@@ -53,7 +55,7 @@ def update_file(
             )
             print(f"Updated existing file: {file_path}")
         except Exception as e:
-            print(f"File {file_path} doesn't exist, creating new file. Error: {str(e)}")
+            print(f"File {file_path} doesn't exist, creating new file")
             repo.create_file(
                 file_path,
                 commit_message,
@@ -66,20 +68,20 @@ def update_file(
         print(traceback.format_exc())
         raise
 
-def create_pull_request(
+def create_pr_from_analysis(
     repo: Repository, 
     issue: Issue, 
-    solution_text: Union[str, IssueComment],
+    analysis: Union[str, IssueComment],
     code_changes: Optional[List[Tuple[str, str]]] = None
 ) -> Optional[PullRequest]:
-    """Create a pull request with the suggested changes"""
+    """Create a pull request from analysis comment"""
     try:
-        print("\nCreating pull request...")
+        print("\nCreating pull request from analysis...")
         
         # Get code changes if not provided
         if code_changes is None:
-            solution_body = solution_text.body if hasattr(solution_text, 'body') else solution_text
-            code_changes = parse_code_blocks(solution_body)
+            analysis_body = analysis.body if hasattr(analysis, 'body') else analysis
+            code_changes = parse_code_blocks(analysis_body)
         
         if not code_changes:
             print("No code changes found in the analysis")
@@ -106,10 +108,9 @@ def create_pull_request(
             title=f"AI suggestion for issue #{issue.number}",
             body=f"""This pull request addresses issue #{issue.number}
 
-{solution_text}
+{analysis.body if hasattr(analysis, 'body') else analysis}
 
-This is an AI-generated pull request. Please review the changes carefully before merging.
-            """,
+This is an AI-generated pull request. Please review the changes carefully before merging.""",
             base=repo.default_branch,
             head=branch_name
         )
@@ -124,12 +125,13 @@ This is an AI-generated pull request. Please review the changes carefully before
     except Exception as e:
         print(f"Error creating pull request: {str(e)}")
         print(traceback.format_exc())
-        error_comment = f"""
-        I encountered an error while trying to create the pull request:
-        ```
-        {str(e)}
-        ```
-        Please check the repository permissions and settings.
-        """
+        error_comment = f"""I encountered an error while trying to create the pull request:
+```
+{str(e)}
+```
+Please check the repository permissions and settings."""
         issue.create_comment(error_comment)
         raise
+
+# Make sure create_pr_from_analysis is available for import
+__all__ = ['create_pr_from_analysis']
