@@ -1,138 +1,83 @@
-"""Module for creating and managing pull requests"""
-from typing import List, Tuple, Optional, Union
-from github.Repository import Repository
+"""Module for handling GitHub issue comments"""
+from typing import List
 from github.Issue import Issue
 from github.IssueComment import IssueComment
-from github.PullRequest import PullRequest
-import os
-from datetime import datetime, timezone
-import traceback
-from gha_issue_resolution.ai_utils import parse_code_blocks
+from gha_issue_resolution.ai_utils import query_gemini
+from gha_issue_resolution.file_utils import get_relevant_files, get_file_content
 
-def create_branch(repo: Repository, base_branch: str = 'main') -> str:
-    """Create a new branch for the changes"""
-    try:
-        # Try 'main' first, then 'master' if 'main' fails
-        try:
-            base_ref = repo.get_git_ref(f"heads/{base_branch}")
-        except:
-            base_branch = 'master'
-            base_ref = repo.get_git_ref(f"heads/{base_branch}")
-            
-        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
-        branch_name = f"ai-suggestion-{timestamp}-{os.urandom(2).hex()}"
-        repo.create_git_ref(f"refs/heads/{branch_name}", base_ref.object.sha)
-        print(f"Created branch: {branch_name} from {base_branch}")
-        return branch_name
-    except Exception as e:
-        print(f"Error creating branch: {str(e)}")
-        print(traceback.format_exc())
-        raise
+RESPONSE_TEMPLATE = """## AI-generated response
 
-def update_file(
-    repo: Repository, 
-    file_path: str, 
-    content: str, 
-    branch: str, 
-    commit_message: str
-) -> None:
-    """Update or create a file in the repository"""
-    try:
-        print(f"Updating file: {file_path} on branch: {branch}")
-        print(f"Content length: {len(content)}")
-        
-        # Try to get existing file
-        try:
-            file = repo.get_contents(file_path, ref=branch)
-            repo.update_file(
-                file_path,
-                commit_message,
-                content,
-                file.sha,
-                branch=branch
-            )
-            print(f"Updated existing file: {file_path}")
-        except Exception as e:
-            print(f"File {file_path} doesn't exist, creating new file. Error: {str(e)}")
-            repo.create_file(
-                file_path,
-                commit_message,
-                content,
-                branch=branch
-            )
-            print(f"Created new file: {file_path}")
-    except Exception as e:
-        print(f"Error updating file {file_path}: {str(e)}")
-        print(traceback.format_exc())
-        raise
+{response}
 
-def create_pr_from_analysis(
-    repo: Repository, 
-    issue: Issue, 
-    analysis: Union[str, IssueComment],
-    code_changes: Optional[List[Tuple[str, str]]] = None
-) -> Optional[PullRequest]:
-    """Create a pull request from analysis comment"""
-    try:
-        print("\nCreating pull request...")
-        
-        # Get code changes if not provided
-        if code_changes is None:
-            analysis_body = analysis.body if hasattr(analysis, 'body') else analysis
-            code_changes = parse_code_blocks(analysis_body)
-        
-        if not code_changes:
-            print("No code changes found in the analysis")
-            return None
-        
-        print(f"Number of code changes to apply: {len(code_changes)}")
-        
-        # Create a new branch
-        branch_name = create_branch(repo)
-        
-        # Apply each code change
-        for file_path, new_content in code_changes:
-            print(f"\nProcessing changes for file: {file_path}")
-            update_file(
-                repo,
-                file_path,
-                new_content,
-                branch_name,
-                f"AI suggestion: Update {file_path}"
-            )
-        
-        # Create pull request
-        pr = repo.create_pull(
-            title=f"AI suggestion for issue #{issue.number}",
-            body=f"""This pull request addresses issue #{issue.number}
+To create a pull request with any code changes suggested above, comment with: `/create-pr`
+To get an updated analysis, comment with: `/update`"""
 
-{analysis}
+def get_conversation_history(issue: Issue) -> List[str]:
+    """Get formatted conversation history from issue"""
+    comments = list(issue.get_comments())
+    conversation = []
+    
+    for comment in comments:
+        if comment.user.login == issue.user.login:
+            conversation.append(f"User: {comment.body}")
+        elif "AI-generated" in comment.body:
+            conversation.append(f"Assistant: {comment.body}")
+    
+    return conversation
 
-This is an AI-generated pull request. Please review the changes carefully before merging.
-            """,
-            base=repo.default_branch,
-            head=branch_name
-        )
-        
-        print(f"Created pull request: {pr.html_url}")
-        
-        # Link PR to issue
-        comment = issue.create_comment(f"I've created a pull request with suggested changes: {pr.html_url}")
-        print(f"Added comment to issue: {comment.html_url}")
-        
-        return pr
-    except Exception as e:
-        print(f"Error creating pull request: {str(e)}")
-        print(traceback.format_exc())
-        error_comment = f"""
-        I encountered an error while trying to create the pull request:
-        ```
-        {str(e)}
-        ```
-        Please check the repository permissions and settings.
-        """
-        issue.create_comment(error_comment)
-        raise
+def create_response_comment(issue: Issue, trigger_comment: IssueComment) -> IssueComment:
+    """Generate and post a response to a human comment"""
+    print("\nGenerating response to comment...")
+    
+    # Get conversation history
+    conversation = get_conversation_history(issue)
+    
+    # Get relevant files
+    relevant_files = get_relevant_files()
+    file_contents = []
+    for file_path in relevant_files:
+        content = get_file_content(file_path)
+        if content and "Error reading file" not in content:
+            file_contents.append((file_path, content))
+    
+    # Create prompt with conversation context
+    prompt = f"""Analyze this GitHub issue comment and provide an appropriate response:
+    
+Issue Title: {issue.title}
+Issue Body: {issue.body}
+
+Conversation history:
+{'\n'.join(conversation)}
+
+Latest comment to respond to:
+{trigger_comment.body}
+
+Please provide:
+1. A direct response to the comment
+2. If code changes are needed, follow this format:
+   
+   File: path/to/file.py (CURRENT CONTENT)
+   ```python
+   # Current content here
+   ```
+   
+   Changes to make:
+   - Description of changes needed
+   
+   File: path/to/file.py (WITH CHANGES)
+   ```python
+   # Complete new content with changes
+   ```
+"""
+    
+    response = query_gemini(prompt, file_contents)
+    
+    # Format comment using template
+    comment_body = RESPONSE_TEMPLATE.format(response=response)
+    
+    comment = issue.create_comment(comment_body)
+    print(f"\nAdded response comment: {comment.html_url}")
+    return comment
 
 # Exports
-__all__ = ['create_branch', 'update_file', 'create_pr_from_analysis']
+__all__ = ['create_response_comment']
