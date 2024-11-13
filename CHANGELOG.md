@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.4.0...v1.5.0) (2024-11-13)
+
+
+### Features
+
+* **issue_processor:** Process both issues and comments ([6ffc7aa](https://github.com/laurigates/gha-issue-resolution/commit/6ffc7aa4d456b8f22e6b83ad42c7bdbbac6320f7))
+
 ## [1.4.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.3.0...v1.4.0) (2024-11-12)
 
 
