@@ -1,51 +1,46 @@
-name: 'Issue Resolution with Gemini Flash'
-description: 'Analyzes GitHub issues and provides AI-generated suggestions using Gemini Flash'
+name: 'GitHub Issue Resolution with Gemini Flash'
+description: 'AI-powered GitHub issue resolution using Google Gemini Flash'
+author: 'Lauri Gates'
 
 inputs:
-  github_token:
-    description: 'GitHub token'
+  github-token:
+    description: 'GitHub token for API access'
     required: true
-  gemini_api_key:
-    description: 'Gemini API Key'
+  gemini-api-key:
+    description: 'Google Gemini API key'
     required: true
-  max_tokens:
-    description: 'Maximum number of tokens for Gemini Flash response'
+  max-tokens:
+    description: 'Maximum tokens for Gemini response'
     required: false
-    default: '512'
+    default: '8192'
 
 runs:
   using: 'composite'
   steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      
+    
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.12'
         cache: 'pip'
     
-    - name: Install PDM
+    - name: Install dependencies
       shell: bash
       run: |
         python -m pip install --upgrade pip
         pip install pdm
+        pdm install
     
-    - name: Install dependencies
-      shell: bash
-      run: |
-        cd ${{ github.action_path }}
-        pdm config python.use_venv false
-        pdm install --dev
-    
-    - name: Run issue resolution script
+    - name: Run issue resolution
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ inputs.github_token }}
-        GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
-        MAX_TOKENS: ${{ inputs.max_tokens }}
-        PYTHONPATH: ${{ github.action_path }}/src
-        PYTHONUNBUFFERED: 1
-      run: |
-        cd ${{ github.action_path }}
-        pdm run start
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        MAX_TOKENS: ${{ inputs.max-tokens }}
+      run: pdm run start
+
+branding:
+  icon: 'message-square'
+  color: 'blue'
