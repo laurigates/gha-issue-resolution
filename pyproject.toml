@@ -18,8 +18,7 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [tool.pdm]
-distribution = false
-package-type = "library"
+distribution = true  # Changed from package-type = "library"
 
 [tool.pdm.dev-dependencies]
 
