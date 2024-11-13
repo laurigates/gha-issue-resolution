@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.5.0...v1.6.0) (2024-11-13)
+
+
+### Features
+
+* implement PR creation from AI suggestions ([89e0c15](https://github.com/laurigates/gha-issue-resolution/commit/89e0c154826ca5f3f5944fc159563d279ee95614))
+
+
+### Bug Fixes
+
+* pdm configuration error ([c551cd2](https://github.com/laurigates/gha-issue-resolution/commit/c551cd22427b4934004dcc18cdaeea15e104f1dd))
+
 ## [1.5.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.4.0...v1.5.0) (2024-11-13)
 
 
