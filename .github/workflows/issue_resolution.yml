@@ -2,11 +2,9 @@ name: Issue Resolution
 
 on:
   issues:
-    types:
-      - opened
+    types: [opened]
   issue_comment:
-    types:
-      - created
+    types: [created]
 
 permissions:
   contents: write
@@ -18,9 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
       - name: Run Issue Resolution
         uses: laurigates/gha-issue-resolution@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           max-tokens: '8192'
+          event-name: ${{ github.event_name }}
+          event-action: ${{ github.event.action }}
