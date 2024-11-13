@@ -2,17 +2,20 @@ name: Issue Resolution
 
 on:
   issues:
-    types: [opened]  # Trigger on new issues
+    types:
+      - opened
   issue_comment:
-    types: [created]  # Trigger on new comments
+    types:
+      - created
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   resolve:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # Needed for creating branches and PRs
-      issues: write    # Needed for commenting on issues
-      pull-requests: write  # Needed for creating PRs
     
     steps:
       - name: Run Issue Resolution
