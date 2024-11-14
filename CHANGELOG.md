@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.1](https://github.com/laurigates/gha-issue-resolution/compare/v1.6.0...v1.6.1) (2024-11-14)
+
+
+### Bug Fixes
+
+* import issues ([33ca9ab](https://github.com/laurigates/gha-issue-resolution/commit/33ca9ab99badfdf916babb36be856fe27b8213b6))
+* no element named body ([b5bf682](https://github.com/laurigates/gha-issue-resolution/commit/b5bf682353c650da5d3227bb5d40d499730e626f))
+* pr_handler ([b5617f2](https://github.com/laurigates/gha-issue-resolution/commit/b5617f29ac65a4d5087623e62dd922101a2ab706))
+
 ## [1.6.0](https://github.com/laurigates/gha-issue-resolution/compare/v1.5.0...v1.6.0) (2024-11-13)
 
 
